@@ -1,0 +1,230 @@
+/**
+ * PQC Registration page – ESP32 binding uses the same serial protocol as login.
+ */
+(function () {
+    'use strict';
+
+    let activePort = null;
+
+    function apiUrl(path) {
+        if (typeof OC !== 'undefined' && OC.generateUrl) {
+            return OC.generateUrl(path);
+        }
+        return '/index.php' + path;
+    }
+
+    function requestToken() {
+        if (typeof OC !== 'undefined' && OC.requestToken) {
+            return OC.requestToken;
+        }
+        const body = document.querySelector('[data-requesttoken]');
+        return body ? body.getAttribute('data-requesttoken') : '';
+    }
+
+    function setupPasswordToggle(toggleEl, inputEl) {
+        if (!toggleEl || !inputEl) {
+            return;
+        }
+
+        const eyeOpen = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        const eyeClosed = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+        toggleEl.innerHTML = eyeOpen;
+        toggleEl.setAttribute('role', 'button');
+        toggleEl.setAttribute('aria-label', 'Toggle password visibility');
+        toggleEl.setAttribute('tabindex', '0');
+
+        const toggle = () => {
+            const isPassword = inputEl.getAttribute('type') === 'password';
+            inputEl.setAttribute('type', isPassword ? 'text' : 'password');
+            toggleEl.innerHTML = isPassword ? eyeClosed : eyeOpen;
+        };
+
+        toggleEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggle();
+        });
+        toggleEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle();
+            }
+        });
+    }
+
+    async function bindEsp32Key(bindBtn, keyDisplay, keyValue, keyInput, statusMsg, submitBtn) {
+        if (!window.PQCSerial) {
+            alert('Device binding module failed to load. Please refresh the page.');
+            return;
+        }
+
+        bindBtn.disabled = true;
+        bindBtn.innerText = '⌛ Communicating...';
+
+        try {
+            if (activePort) {
+                await window.PQCSerial.closePort(activePort);
+                activePort = null;
+            }
+
+            const result = await window.PQCSerial.bindEsp32Device({
+                apiUrl,
+                onStatus: (text) => {
+                    statusMsg.innerText = text;
+                },
+            });
+
+            const pqcKey = result.key;
+            keyInput.value = pqcKey;
+            keyValue.innerText = pqcKey;
+            keyDisplay.style.display = 'block';
+
+            statusMsg.innerHTML = '<span style="color:#22c55e; font-weight:bold;">Key detected successfully!</span>';
+            bindBtn.style.display = 'none';
+
+            submitBtn.disabled = false;
+            submitBtn.style.background = '#0f172a';
+            submitBtn.style.cursor = 'pointer';
+        } catch (err) {
+            console.error('[PQC Register] Binding error:', err);
+            statusMsg.innerText = 'Error: ' + (err.message || 'Binding failed');
+            bindBtn.innerText = 'Try Again';
+            bindBtn.disabled = false;
+
+            if (activePort) {
+                await window.PQCSerial.closePort(activePort);
+                activePort = null;
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const bindBtn = document.getElementById('bind-pqc-btn');
+        const keyDisplay = document.getElementById('pqc-key-display');
+        const keyValue = document.getElementById('pqc-key-value');
+        const keyInput = document.getElementById('pqc-key-input');
+        const statusMsg = document.getElementById('pqc-status-msg');
+        const submitBtn = document.getElementById('submit-btn');
+        const form = document.getElementById('pqc-register-form');
+
+        setupPasswordToggle(
+            document.getElementById('toggle-password'),
+            document.getElementById('pqc-password')
+        );
+        setupPasswordToggle(
+            document.getElementById('toggle-confirm-password'),
+            document.getElementById('pqc-confirm-password')
+        );
+
+        if (bindBtn) {
+            bindBtn.addEventListener('click', () => {
+                bindEsp32Key(bindBtn, keyDisplay, keyValue, keyInput, statusMsg, submitBtn);
+            });
+        }
+
+        if (!form) {
+            return;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            if (data.password !== data.confirm_password) {
+                alert('Passwords do not match!');
+                return;
+            }
+
+            if (!data.pqcKey) {
+                alert('Please bind your ESP32 key first!');
+                return;
+            }
+
+            submitBtn.innerText = 'Creating Account...';
+            submitBtn.disabled = true;
+
+            try {
+                const payload = {
+                    user: (data.user || '').trim().toLowerCase(),
+                    password: data.password,
+                    pqcKey: data.pqcKey,
+                    displayName: data.displayName || '',
+                    email: data.email || ''
+                };
+
+                const headers = { 'Content-Type': 'application/json' };
+                const token = requestToken();
+                if (token) {
+                    headers.requesttoken = token;
+                }
+
+                const response = await fetch(apiUrl('/apps/pqc_login/register'), {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (result.status === 'success') {
+                    showSSSPage(result.sss);
+                } else {
+                    alert('Error: ' + (result.message || 'Registration failed'));
+                    submitBtn.innerText = 'Register & Bind';
+                    submitBtn.disabled = false;
+                }
+            } catch (err) {
+                console.error('[PQC Register]', err);
+                alert('An error occurred during registration.');
+                submitBtn.innerText = 'Register & Bind';
+                submitBtn.disabled = false;
+            }
+        });
+    });
+
+    function showSSSPage(sss) {
+        if (!sss || !sss.share_b) {
+            console.error('[PQC Register] SSS data missing from response');
+            alert('Account created, but recovery keys could not be generated. Please contact admin.');
+            window.location.href = apiUrl('/login');
+            return;
+        }
+
+        const form = document.getElementById('pqc-register-form');
+        const sssContainer = document.getElementById('sss-display-container');
+        const shareBEl = document.getElementById('sss-share-b');
+        const copyBtn = document.getElementById('copy-share-b');
+        const downloadBtn = document.getElementById('download-share-c');
+        const finishBtn = document.getElementById('finish-sss-btn');
+
+        if (!form || !sssContainer) return;
+
+        form.style.display = 'none';
+        sssContainer.style.display = 'block';
+
+        shareBEl.innerText = sss.share_b;
+
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(sss.share_b);
+            copyBtn.innerText = 'Copied!';
+            setTimeout(() => copyBtn.innerText = 'Copy', 2000);
+        };
+
+        downloadBtn.onclick = () => {
+            const blob = new Blob([sss.share_c], { type: 'application/octet-stream' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'recovery.pqc';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        };
+
+        finishBtn.onclick = () => {
+            window.location.href = apiUrl('/login');
+        };
+    }
+})();

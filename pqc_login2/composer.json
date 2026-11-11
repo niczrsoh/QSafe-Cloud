@@ -1,0 +1,14 @@
+{
+    "name": "pqc/pqc-login",
+    "description": "Post-quantum hardware login for Nextcloud",
+    "type": "nextcloud-app",
+    "license": "AGPL-3.0-or-later",
+    "autoload": {
+        "psr-4": {
+            "OCA\\PQCLogin\\": "lib/"
+        }
+    },
+    "require": {
+        "php": ">=8.1"
+    }
+}

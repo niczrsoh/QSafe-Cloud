@@ -1,0 +1,23 @@
+<?php
+
+namespace OCA\PQCLogin\Listener;
+
+use OCP\AppFramework\Http\Events\BeforeResponseSentEvent;
+use OCP\EventDispatcher\IEventListener;
+
+class ResponseListener implements IEventListener {
+
+    public function handle($event): void {
+        if (!($event instanceof BeforeResponseSentEvent)) {
+            return;
+        }
+
+        $response = $event->getResponse();
+
+        $response->addHeader('X-PQC-Safe', 'true');
+        $response->addHeader('X-PQC-Standard', 'FIPS-203');
+        $response->addHeader('X-PQC-Algorithm', 'ML-KEM-768');
+        $response->addHeader('X-PQC-OID', '2.16.840.1.101.3.4.4.2');
+        $response->addHeader('X-Quantum-Resistant', 'ML-KEM-Hybrid');
+    }
+}

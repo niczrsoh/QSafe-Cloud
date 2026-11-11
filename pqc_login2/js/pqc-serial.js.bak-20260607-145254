@@ -1,0 +1,149 @@
+/**
+ * Shared ESP32 Web Serial helpers (same protocol as login flow).
+ */
+(function (global) {
+    'use strict';
+
+    function parseEsp32SerialBuffer(buffer) {
+        let key = '';
+        let signature = '';
+        const lines = buffer.split(/\r?\n/);
+
+        for (const raw of lines) {
+            const line = raw.trim();
+            if (line.startsWith('PQC_KEY:')) {
+                const hex = line.slice(8).replace(/[^a-fA-F0-9]/g, '');
+                if (hex.length === 64) {
+                    key = hex.toLowerCase();
+                }
+            }
+            if (line.startsWith('PQC_SIG:')) {
+                const hex = line.slice(8).replace(/[^a-fA-F0-9]/g, '');
+                if (hex.length === 64) {
+                    signature = hex.toLowerCase();
+                }
+            }
+        }
+
+        return { key, signature };
+    }
+
+    async function closePort(port) {
+        if (!port) {
+            return;
+        }
+        try {
+            await port.close();
+        } catch (e) { /* ignore */ }
+    }
+
+    /**
+     * @param {object} opts
+     * @param {function(string): void} [opts.onStatus]
+     * @param {boolean} [opts.requireSignature]
+     * @param {number} [opts.bootDelayMs]
+     * @param {number} [opts.timeoutMs]
+     */
+    async function bindEsp32Device(opts) {
+        const onStatus = opts.onStatus || function () {};
+        const requireSignature = !!opts.requireSignature;
+        const bootDelayMs = opts.bootDelayMs ?? 1500;
+        const timeoutMs = opts.timeoutMs ?? 20000;
+
+        if (!('serial' in navigator)) {
+            throw new Error('Your browser does not support Web Serial. Please use Chrome or Edge on desktop.');
+        }
+
+        onStatus('Fetching PQC challenge...');
+        const challengeRes = await fetch(
+            (typeof opts.apiUrl === 'function' ? opts.apiUrl : (p) => '/index.php' + p)('/apps/pqc_login/challenge')
+        );
+        const challengeData = await challengeRes.json();
+        const challenge = challengeData.challenge;
+        if (!challenge) {
+            throw new Error('Failed to get PQC challenge from server');
+        }
+
+        onStatus('Select your ESP32 device...');
+        let port;
+        try {
+            port = await navigator.serial.requestPort();
+        } catch (portErr) {
+            if (portErr.name === 'NotFoundError') {
+                throw new Error('No device selected. Please select your ESP32 and try again.');
+            }
+            throw portErr;
+        }
+
+        onStatus('Opening secure channel...');
+        await port.open({ baudRate: 115200 });
+
+        onStatus('Waiting for device boot...');
+        await new Promise((resolve) => setTimeout(resolve, bootDelayMs));
+
+        onStatus('Sending challenge to PQC module...');
+        const encoder = new TextEncoder();
+        const writer = port.writable.getWriter();
+        const challengeLine = `CHALLENGE:${challenge}\n`;
+        await writer.write(encoder.encode(challengeLine));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await writer.write(encoder.encode(challengeLine));
+        writer.releaseLock();
+
+        onStatus('Listening for device response...');
+        const reader = port.readable.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let key = '';
+        let signature = '';
+
+        const timeout = setTimeout(() => {
+            reader.cancel().catch(() => {});
+        }, timeoutMs);
+
+        try {
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const parsed = parseEsp32SerialBuffer(buffer);
+                key = parsed.key;
+                signature = parsed.signature;
+
+                const ready = requireSignature
+                    ? key.length === 64 && signature.length === 64
+                    : key.length === 64;
+
+                if (ready) {
+                    clearTimeout(timeout);
+                    reader.releaseLock();
+                    break;
+                }
+            }
+        } catch (readErr) {
+            clearTimeout(timeout);
+            throw new Error('Device read timeout. Unplug/replug ESP32 and try again.');
+        }
+
+        await closePort(port);
+
+        if (!key) {
+            throw new Error('No PQC key received from device. Check USB connection and try again.');
+        }
+
+        if (requireSignature && signature.length !== 64) {
+            throw new Error('Incomplete PQC handshake. Please try binding again.');
+        }
+
+        return { key, signature, challenge, port: null };
+    }
+
+    global.PQCSerial = {
+        parseEsp32SerialBuffer,
+        bindEsp32Device,
+        closePort,
+    };
+})(typeof window !== 'undefined' ? window : this);

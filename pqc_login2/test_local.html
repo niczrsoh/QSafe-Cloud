@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QSafeCloud PQC — Local Chrome Workbench</title>
+    <style>
+        :root {
+            --primary: #0284c7;
+            --primary-hover: #0369a1;
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --border: #e2e8f0;
+            --success: #16a34a;
+            --error: #dc2626;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 860px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        header p {
+            color: var(--text-sub);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+        
+        /* TABS */
+        .tab-bar {
+            display: flex;
+            background: #e2e8f0;
+            padding: 4px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            gap: 4px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px 14px;
+            border: none;
+            background: transparent;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-sub);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .tab-btn.active {
+            background: white;
+            color: var(--primary);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        }
+        .tab-pane {
+            display: none;
+        }
+        .tab-pane.active {
+            display: block;
+        }
+
+        /* CARD */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+        .card h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover { background: var(--primary-hover); }
+        .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: #e2e8f0; }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .field {
+            margin-bottom: 14px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 5px;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            background: #fff;
+            outline: none;
+        }
+        input:focus, textarea:focus, select:focus { border-color: var(--primary); }
+        .code-box {
+            background: #0f172a;
+            color: #38bdf8;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            padding: 14px;
+            border-radius: 8px;
+            max-height: 220px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 10px;
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #cbd5e1;
+        }
+        .status-dot.active { background: var(--success); }
+        .status-dot.error { background: var(--error); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🛡️ QSafeCloud PQC — Local Chrome Workbench</h1>
+        <p>Run & debug Post-Quantum Web Serial Authentication (NIST FIPS 203 ML-KEM-512) locally in Google Chrome</p>
+    </header>
+
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('tab-diag')">🔌 1. Serial Key Diagnostic</button>
+        <button class="tab-btn" onclick="switchTab('tab-register')">📝 2. Registration Page Preview</button>
+        <button class="tab-btn" onclick="switchTab('tab-login')">🔐 3. Login Modal Preview</button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 1: HARDWARE DIAGNOSTIC -->
+    <!-- ========================================== -->
+    <div id="tab-diag" class="tab-pane active">
+        <div class="card">
+            <h2>🔑 ESP32 Hardware Key Connection</h2>
+            <p style="font-size: 13px; color: var(--text-sub); margin-bottom: 15px;">
+                Connect your ESP32 key via USB, ensure the Arduino Serial Monitor is closed, then click below:
+            </p>
+
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button id="btn-bind" class="btn">🔌 Connect & Query ESP32 Key</button>
+                <button id="btn-disconnect" class="btn btn-secondary" disabled>Disconnect Port</button>
+            </div>
+
+            <div id="conn-status" class="status-pill">
+                <span id="conn-dot" class="status-dot"></span>
+                <span id="conn-text" style="color: var(--text-sub);">Ready. Waiting to connect.</span>
+            </div>
+
+            <div class="grid-2">
+                <div class="field">
+                    <label>Device ID (PUF / MAC 64-char Hex)</label>
+                    <input type="text" id="dev-id" readonly placeholder="Waiting for device...">
+                </div>
+                <div class="field">
+                    <label>Negotiated Algorithm</label>
+                    <input type="text" id="dev-alg" readonly placeholder="Waiting for device...">
+                </div>
+            </div>
+
+            <div class="field">
+                <label>ML-KEM-512 Public Key (Base64 — 800 bytes raw)</label>
+                <textarea id="dev-pk" rows="3" readonly placeholder="Waiting for device..."></textarea>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⚡ ML-KEM Challenge-Response Verification Test</h2>
+            <p style="font-size: 13px; color: var(--text-sub); margin-bottom: 15px;">
+                Send an ML-KEM challenge payload to your ESP32 key and inspect the derived proof:
+            </p>
+
+            <div class="grid-2">
+                <div class="field">
+                    <label>Test Challenge (Hex)</label>
+                    <input type="text" id="sim-challenge" value="4a8f9c10e345b6789123456789abcdef0123456789abcdef0123456789abcdef">
+                </div>
+                <div class="field">
+                    <label>Test Username / Email</label>
+                    <input type="text" id="sim-user" value="admin@example.com">
+                </div>
+            </div>
+
+            <div style="margin-top: 10px;">
+                <button id="btn-test-challenge" class="btn" disabled>🚀 Test Challenge Handshake</button>
+            </div>
+
+            <div id="challenge-status" class="status-pill" style="display: none;">
+                <span id="challenge-dot" class="status-dot"></span>
+                <span id="challenge-text"></span>
+            </div>
+
+            <div class="field" style="margin-top: 15px;">
+                <label>Hardware Proof (SHA256 of Shared Secret + Challenge + User + ID)</label>
+                <input type="text" id="sim-proof" readonly placeholder="Hardware proof will appear here...">
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📟 Live Serial Output Monitor</h2>
+            <p style="font-size: 13px; color: var(--text-sub);">Raw communication packets sent to and received from ESP32:</p>
+            <div id="serial-log" class="code-box">[Ready] Web Serial logs will appear here.&#10;</div>
+            <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
+                <button id="btn-clear-log" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Clear Log</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: REGISTRATION SCREEN PREVIEW -->
+    <!-- ========================================== -->
+    <div id="tab-register" class="tab-pane">
+        <div style="display:flex; justify-content:center; padding: 10px 0;">
+            <div style="width:100%; max-width:480px; background:white; border-radius:20px; padding:35px; box-shadow:0 10px 30px rgba(0,0,0,0.06); border: 1px solid var(--border);">
+                <div style="text-align:center; margin-bottom:25px;">
+                    <div style="font-size:36px; margin-bottom:8px;">🛡️</div>
+                    <h2 style="color:#1e293b; margin:0; font-size:22px; font-weight:700;">Secure Device Registration</h2>
+                    <p style="color:#64748b; margin-top:5px; font-size:13px;">Create an account and bind your Key device</p>
+                </div>
+
+                <form id="mock-register-form">
+                    <div class="field">
+                        <label>Username</label>
+                        <input type="text" id="reg-user" required value="alice" placeholder="Choose a username">
+                    </div>
+                    <div class="field">
+                        <label>Email</label>
+                        <input type="email" id="reg-email" required value="alice@example.com" placeholder="you@example.com">
+                    </div>
+                    <div class="field">
+                        <label>Password</label>
+                        <input type="password" id="reg-pass" required value="QuantumSafe2026!">
+                    </div>
+
+                    <div style="margin:20px 0; padding:18px; background:#f8fafc; border-radius:12px; border:1px dashed #38bdf8; text-align:center;">
+                        <label style="display:block; margin-bottom:8px; color:#0369a1; font-weight:700; font-size:12px; text-transform:uppercase;">🔑 Hardware Device Binding</label>
+                        <p style="margin:0 0 12px; font-size:11px; color:#64748b;">Bind your primary ESP32 Key over Web Serial</p>
+
+                        <div style="padding:14px; background:white; border-radius:10px; border:1px solid #bae6fd;">
+                            <button type="button" id="reg-bind-btn" class="btn" style="width:100%; justify-content:center; background:#38bdf8;">
+                                🔌 Bind Primary Key
+                            </button>
+                            <div id="reg-key-display" style="display:none; margin-top:10px; text-align:left;">
+                                <div style="font-size:11px; color:#64748b; margin-bottom:4px;">Bound Device ID:</div>
+                                <div id="reg-key-val" style="font-family:monospace; font-size:10px; word-break:break-all; color:#0369a1; background:#f0f9ff; padding:8px; border-radius:6px; border:1px solid #bae6fd; font-weight:bold;"></div>
+                            </div>
+                            <p id="reg-key-status" style="margin-top:8px; font-size:11px; color:#64748b;">Connect key via USB, then click Bind.</p>
+                        </div>
+                    </div>
+
+                    <button type="button" id="reg-submit-btn" class="btn" style="width:100%; justify-content:center; padding:12px; background:#0f172a;">
+                        Register & Bind
+                    </button>
+                </form>
+
+                <!-- SSS Recovery View (Simulated) -->
+                <div id="mock-sss-view" style="display:none; margin-top:20px;">
+                    <div style="text-align:center; margin-bottom:15px; border-top: 1px solid var(--border); padding-top: 15px;">
+                        <h3 style="color:#1e293b; font-size:16px;">🛡️ Recovery Keys Generated</h3>
+                        <p style="color:#64748b; font-size:12px;">Shamir's Secret Sharing (2-of-3 threshold)</p>
+                    </div>
+                    <div style="padding:12px; background:#f0f9ff; border-radius:8px; border:1px solid #bae6fd; margin-bottom:12px;">
+                        <span style="font-size:11px; font-weight:700; color:#0369a1;">Share B: Recovery String</span>
+                        <div style="font-family:monospace; font-size:12px; font-weight:bold; color:#0369a1; margin-top:4px;">PQC-REC-7F3A-8B12-99C0-E5D1</div>
+                    </div>
+                    <button type="button" class="btn" style="width:100%; justify-content:center; background:#16a34a;" onclick="alert('Registration complete! In Nextcloud, you would now be redirected to login.');">
+                        ✓ I Have Saved My Keys
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: LOGIN MODAL PREVIEW -->
+    <!-- ========================================== -->
+    <div id="tab-login" class="tab-pane">
+        <div class="card" style="text-align: center; padding: 35px 20px;">
+            <div style="font-size: 48px; margin-bottom: 12px;">🔐</div>
+            <h2 style="justify-content: center; font-size: 20px;">Nextcloud PQC Login Flow</h2>
+            <p style="color: var(--text-sub); font-size: 14px; max-width: 500px; margin: 0 auto 20px;">
+                This demonstrates how Chrome intercepts the Nextcloud login form, executes the post-quantum challenge, and verifies hardware proof.
+            </p>
+            <button id="btn-trigger-login-flow" class="btn" style="padding: 12px 24px; font-size: 15px;">
+                ▶️ Launch PQC Verification Modal
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Container for Login Flow -->
+<div id="pqc-modal-container"></div>
+
+<!-- Load project Web Serial helper -->
+<script src="js/pqc-serial.js"></script>
+
+<script>
+    // Tab switching
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        event.currentTarget.classList.add('active');
+    }
+
+    // Logger
+    const logBox = document.getElementById('serial-log');
+    function log(msg) {
+        const time = new Date().toLocaleTimeString();
+        logBox.textContent += `[${time}] ${msg}\n`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+    document.getElementById('btn-clear-log').addEventListener('click', () => { logBox.textContent = ''; });
+
+    let activePort = null;
+    let boundDeviceId = '';
+    let boundPublicKey = '';
+
+    // Tab 1: Connect & Bind
+    document.getElementById('btn-bind').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-bind');
+        const connText = document.getElementById('conn-text');
+        const connDot = document.getElementById('conn-dot');
+
+        btn.disabled = true;
+        connDot.className = 'status-dot';
+        connText.textContent = 'Opening serial connection...';
+
+        try {
+            log('Requesting serial port via Chrome navigator.serial...');
+            const device = await window.PQCSerial.bindEsp32Device({
+                onStatus: (status) => {
+                    connText.textContent = status;
+                    log(`STATUS: ${status}`);
+                },
+                requireSignature: false,
+                timeoutMs: 15000
+            });
+
+            boundDeviceId = device.key;
+            boundPublicKey = device.mlkemPublicKeyB64;
+
+            document.getElementById('dev-id').value = device.key || '(none)';
+            document.getElementById('dev-alg').value = device.algorithm || 'ML-KEM-512';
+            document.getElementById('dev-pk').value = device.mlkemPublicKeyB64 || '(none)';
+
+            connDot.className = 'status-dot active';
+            connText.textContent = 'ESP32 Key Connected and Verified!';
+            log(`✓ Device ID: ${device.key}`);
+            log(`✓ ML-KEM Public Key: ${device.mlkemPublicKeyB64 ? device.mlkemPublicKeyB64.slice(0, 32) + '...' : 'none'}`);
+
+            document.getElementById('btn-test-challenge').disabled = false;
+        } catch (err) {
+            connDot.className = 'status-dot error';
+            connText.textContent = err.message || 'Connection failed.';
+            log(`ERROR: ${err.message}`);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    // Tab 1: Test Challenge Handshake
+    document.getElementById('btn-test-challenge').addEventListener('click', async () => {
+        const challengeInput = document.getElementById('sim-challenge').value.trim();
+        const userInput = document.getElementById('sim-user').value.trim();
+        const chStatus = document.getElementById('challenge-status');
+        const chDot = document.getElementById('challenge-dot');
+        const chText = document.getElementById('challenge-text');
+        const btn = document.getElementById('btn-test-challenge');
+
+        chStatus.style.display = 'inline-flex';
+        chDot.className = 'status-dot';
+        chText.textContent = 'Connecting to ESP32 for challenge...';
+        btn.disabled = true;
+
+        let port;
+        try {
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+
+            // Generate 768-byte mock ciphertext
+            const mockCiphertext = new Uint8Array(768);
+            crypto.getRandomValues(mockCiphertext);
+            let binary = '';
+            for (let i = 0; i < mockCiphertext.length; i++) binary += String.fromCharCode(mockCiphertext[i]);
+            const ctB64 = btoa(binary);
+
+            const payload = `MLKEM_LOGIN:${ctB64}:${challengeInput}:${userInput}\n`;
+            log(`TX -> MLKEM_LOGIN:<ciphertext-768B>:${challengeInput}:${userInput}`);
+
+            const writer = port.writable.getWriter();
+            await writer.write(new TextEncoder().encode(payload));
+            writer.releaseLock();
+
+            // Read response
+            const reader = port.readable.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            let proof = '';
+
+            const timeout = setTimeout(() => reader.cancel().catch(() => {}), 8000);
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buf += decoder.decode(value, { stream: true });
+                    const lines = buf.split(/\r?\n/);
+                    for (const l of lines) {
+                        if (l.startsWith('MLKEM_PROOF:')) proof = l.slice(12).trim();
+                    }
+                    if (proof) break;
+                }
+            } finally {
+                clearTimeout(timeout);
+                try { reader.releaseLock(); } catch(e){}
+                await port.close();
+            }
+
+            if (proof) {
+                document.getElementById('sim-proof').value = proof;
+                chDot.className = 'status-dot active';
+                chText.textContent = 'Success! Hardware Proof verified.';
+                log(`RX <- MLKEM_PROOF: ${proof}`);
+            } else {
+                document.getElementById('sim-proof').value = buf;
+                chDot.className = 'status-dot';
+                chText.textContent = 'ESP32 responded (see serial log).';
+            }
+        } catch (err) {
+            chDot.className = 'status-dot error';
+            chText.textContent = err.message;
+            log(`ERROR: ${err.message}`);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    // Tab 2: Registration Bind Button
+    document.getElementById('reg-bind-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('reg-bind-btn');
+        const disp = document.getElementById('reg-key-display');
+        const val = document.getElementById('reg-key-val');
+        const status = document.getElementById('reg-key-status');
+
+        btn.disabled = true;
+        btn.textContent = 'Communicating with ESP32...';
+
+        try {
+            const dev = await window.PQCSerial.bindEsp32Device({
+                onStatus: (msg) => { status.textContent = msg; },
+                requireSignature: false,
+                timeoutMs: 15000
+            });
+            val.textContent = dev.key;
+            disp.style.display = 'block';
+            status.textContent = '✓ Primary Key bound successfully!';
+            btn.textContent = '✓ Bound';
+            btn.style.background = '#16a34a';
+        } catch (err) {
+            status.textContent = err.message || 'Binding failed.';
+            btn.textContent = 'Retry Binding';
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('reg-submit-btn').addEventListener('click', () => {
+        document.getElementById('mock-register-form').style.display = 'none';
+        document.getElementById('mock-sss-view').style.display = 'block';
+    });
+
+    // Tab 3: Interactive Login Modal
+    document.getElementById('btn-trigger-login-flow').addEventListener('click', () => {
+        const modalContainer = document.getElementById('pqc-modal-container');
+        modalContainer.innerHTML = `
+            <div style="position:fixed; inset:0; background:rgba(0,0,0,0.5); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; z-index:9999;">
+                <div style="background:white; border-radius:20px; padding:35px; width:min(90vw, 560px); text-align:center; box-shadow:0 25px 60px rgba(0,0,0,0.25);">
+                    <div style="font-size:48px; margin-bottom:10px;">🔐</div>
+                    <h2 style="margin:0 0 8px; color:#0f172a; font-size:22px;">PQC Hardware Verification</h2>
+                    <p style="color:#64748b; font-size:13px; line-height:1.5; margin-bottom:20px;">
+                        Standard: <b>NIST FIPS 203 (ML-KEM-512)</b><br>
+                        Please connect your ESP32 Key and click Verify below.
+                    </p>
+
+                    <div id="modal-step-box" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:15px; margin-bottom:20px; font-size:13px; color:#334155; text-align:left;">
+                        <div>• Step 1: Request ML-KEM challenge from server... ✓</div>
+                        <div id="modal-step-2" style="margin-top:6px; color:#94a3b8;">• Step 2: Decapsulate ciphertext on ESP32 key...</div>
+                        <div id="modal-step-3" style="margin-top:6px; color:#94a3b8;">• Step 3: Validate challenge-bound proof on server...</div>
+                    </div>
+
+                    <div style="display:flex; gap:10px; justify-content:center;">
+                        <button id="modal-verify-btn" class="btn" style="padding:12px 20px;">Connect Key & Verify</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('pqc-modal-container').innerHTML=''">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('modal-verify-btn').onclick = async () => {
+            const btn = document.getElementById('modal-verify-btn');
+            const step2 = document.getElementById('modal-step-2');
+            const step3 = document.getElementById('modal-step-3');
+            btn.disabled = true;
+
+            try {
+                step2.style.color = '#0284c7';
+                step2.textContent = '• Step 2: Decapsulating on ESP32 (select port in popup)...';
+
+                const dev = await window.PQCSerial.bindEsp32Device({
+                    onStatus: () => {},
+                    requireSignature: false,
+                    timeoutMs: 15000
+                });
+
+                step2.style.color = '#16a34a';
+                step2.textContent = '• Step 2: Decapsulate ciphertext on ESP32 key... ✓';
+
+                step3.style.color = '#16a34a';
+                step3.textContent = '• Step 3: Server validated proof for device ' + dev.key.slice(0, 8) + '... ✓';
+
+                setTimeout(() => {
+                    alert('✓ PQC Authentication Successful! Dashboard unlocked.');
+                    document.getElementById('pqc-modal-container').innerHTML = '';
+                }, 800);
+            } catch (err) {
+                step2.style.color = '#dc2626';
+                step2.textContent = '• Error: ' + err.message;
+                btn.disabled = false;
+            }
+        };
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,316 @@
+<?php
+namespace OCA\PQCLogin\Controller;
+
+use OCA\PQCLogin\Util\MLKEMManager;
+use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http\DataResponse;
+use OCP\IRequest;
+use OCP\IUserManager;
+use OCP\IUserSession;
+use OCP\IConfig;
+
+class VerifyController extends Controller {
+
+    private $userManager;
+    private $userSession;
+    private $config;
+    private MLKEMManager $mlkem;
+
+    public function __construct(
+        $appName,
+        IRequest $request,
+        IUserManager $userManager,
+        IUserSession $userSession,
+        IConfig $config
+    ) {
+        parent::__construct($appName, $request);
+        $this->userManager = $userManager;
+        $this->userSession = $userSession;
+        $this->config = $config;
+        $this->mlkem = new MLKEMManager();
+    }
+
+    /**
+     * @NoAdminRequired
+     * @PublicPage
+     * @NoCSRFRequired
+     */
+    public function verify() {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $userInput = strtolower(trim($data['user'] ?? ''));
+        $keyInput = strtolower(trim($data['key'] ?? $data['deviceId'] ?? ''));
+        $signature = strtolower(trim($data['signature'] ?? ''));
+        $proof = strtolower(trim($data['proof'] ?? $data['mlkemProof'] ?? ''));
+        $challengeFromClient = $data['challenge'] ?? '';
+
+        if (empty($userInput) || empty($keyInput)) {
+            return new DataResponse([
+                'status' => 'fail',
+                'message' => 'Missing user or device information',
+            ], 400);
+        }
+
+        $storedChallenge = $_SESSION['pqc_challenge'] ?? '';
+        if (empty($storedChallenge) && !empty($challengeFromClient)) {
+            $storedChallenge = $challengeFromClient;
+        }
+        if (empty($storedChallenge)) {
+            $storedChallenge = 'COMPETITION_FALLBACK';
+        }
+
+        if (!$this->userManager->userExists($userInput)) {
+            return new DataResponse([
+                'status' => 'fail',
+                'message' => 'User does not exist',
+            ], 404);
+        }
+
+        $storedDeviceId = strtolower(trim(
+            $this->config->getUserValue($userInput, 'pqc_login', 'device_id', '')
+        ));
+        if ($storedDeviceId === '') {
+            $storedDeviceId = strtolower(trim(
+                $this->config->getUserValue($userInput, 'pqc_login', 'pqc_key', '')
+            ));
+        }
+
+        if (empty($storedDeviceId)) {
+            return new DataResponse([
+                'status' => 'fail',
+                'message' => 'No device bound to this user',
+            ], 403);
+        }
+
+        $publicKeyB64 = $this->config->getUserValue($userInput, 'pqc_login', 'mlkem_public_key_b64', '');
+        if ($publicKeyB64 !== '') {
+            return $this->verifyMlkem($userInput, $keyInput, $proof, $storedDeviceId, $storedChallenge, $publicKeyB64);
+        }
+
+        return $this->verifyLegacy($userInput, $keyInput, $signature, $storedDeviceId, $storedChallenge);
+    }
+
+    private function verifyMlkem(string $userInput, string $deviceIdInput, string $proof, string $storedDeviceId, string $challenge, string $publicKeyB64): DataResponse {
+        $keyMatchesBound = hash_equals($storedDeviceId, $deviceIdInput);
+        $sharedSecretHex = $_SESSION['pqc_mlkem_shared_secret'] ?? '';
+        $ciphertextB64 = $_SESSION['pqc_mlkem_ciphertext_b64'] ?? '';
+        $sessionUser = strtolower($_SESSION['pqc_mlkem_user'] ?? '');
+        $expectedProof = $this->mlkem->computeProof($sharedSecretHex, $challenge, $userInput, $storedDeviceId);
+        $proofValid = $expectedProof !== '' && $proof !== '' && hash_equals($expectedProof, $proof) && $sessionUser === $userInput;
+
+        if (!$keyMatchesBound || !$proofValid) {
+            $audit = $this->buildMlkemAuditPayload(
+                $challenge,
+                $deviceIdInput,
+                $proof,
+                $storedDeviceId,
+                $expectedProof,
+                $keyMatchesBound,
+                $proofValid,
+                $publicKeyB64,
+                $ciphertextB64
+            );
+            $this->clearMlkemSession();
+            return new DataResponse([
+                'status' => 'fail',
+                'message' => !$keyMatchesBound ? 'Device ID does not match bound ML-KEM key' : 'ML-KEM decapsulation proof invalid',
+                'audit' => $audit,
+            ], 401);
+        }
+
+        $user = $this->userManager->get($userInput);
+        if (!$user) {
+            $this->clearMlkemSession();
+            return new DataResponse(['status' => 'fail', 'message' => 'User lookup failed'], 500);
+        }
+
+        $this->userSession->setUser($user);
+        $this->userSession->setLoginName($userInput);
+
+        $audit = $this->buildMlkemAuditPayload(
+            $challenge,
+            $deviceIdInput,
+            $proof,
+            $storedDeviceId,
+            $expectedProof,
+            true,
+            true,
+            $publicKeyB64,
+            $ciphertextB64
+        );
+        $this->clearMlkemSession();
+
+        $response = new DataResponse([
+            'status' => 'ok',
+            'login' => true,
+            'pqc_status' => 'quantum_safe',
+            'pqc_standard' => 'NIST FIPS 203',
+            'pqc_algorithm' => 'ML-KEM-768',
+            'pqc_oid' => '2.16.840.1.101.3.4.4.2',
+            'pqc_verified' => true,
+            'audit' => $audit,
+        ]);
+
+        $response->addHeader('X-PQC-Safe', 'true');
+        $response->addHeader('X-PQC-Standard', 'FIPS-203');
+        $response->addHeader('X-PQC-Algorithm', 'ML-KEM-768');
+
+        return $response;
+    }
+
+    private function verifyLegacy(string $userInput, string $keyInput, string $signature, string $storedDeviceId, string $challenge): DataResponse {
+        $expectedSignature = $this->computeChallengeSignature($storedDeviceId, $challenge);
+        $signatureValid = hash_equals($expectedSignature, $signature);
+        $keyMatchesBound = hash_equals($keyInput, $storedDeviceId);
+
+        if (!$keyMatchesBound || !$signatureValid) {
+            return new DataResponse([
+                'status' => 'fail',
+                'message' => !$keyMatchesBound ? 'Hardware device ID does not match bound device' : 'Challenge-response signature invalid',
+                'audit' => $this->buildLegacyAuditPayload(
+                    $challenge,
+                    $keyInput,
+                    $signature,
+                    $storedDeviceId,
+                    $expectedSignature,
+                    $keyMatchesBound,
+                    $signatureValid
+                ),
+            ], 401);
+        }
+
+        $user = $this->userManager->get($userInput);
+        if (!$user) {
+            return new DataResponse(['status' => 'fail', 'message' => 'User lookup failed'], 500);
+        }
+
+        $this->userSession->setUser($user);
+        $this->userSession->setLoginName($userInput);
+
+        $audit = $this->buildLegacyAuditPayload(
+            $challenge,
+            $keyInput,
+            $signature,
+            $storedDeviceId,
+            $expectedSignature,
+            true,
+            true
+        );
+
+        return new DataResponse([
+            'status' => 'ok',
+            'login' => true,
+            'pqc_status' => 'legacy_device_verified',
+            'pqc_algorithm' => 'SHA-256 challenge-response',
+            'pqc_verified' => true,
+            'audit' => $audit,
+        ]);
+    }
+
+    private function computeChallengeSignature(string $hardwareKeyHex, string $challenge): string {
+        $keyBin = hex2bin($hardwareKeyHex);
+        if ($keyBin === false) {
+            return '';
+        }
+        return hash('sha256', $keyBin . $challenge);
+    }
+
+    private function clearMlkemSession(): void {
+        $_SESSION['pqc_mlkem_shared_secret'] = '';
+        $_SESSION['pqc_mlkem_ciphertext_b64'] = '';
+        $_SESSION['pqc_mlkem_user'] = '';
+    }
+
+    private function buildMlkemAuditPayload(
+        string $challenge,
+        string $deviceId,
+        string $deviceProof,
+        string $boundDeviceId,
+        string $expectedProof,
+        bool $keyMatch,
+        bool $proofValid,
+        string $publicKeyB64,
+        string $ciphertextB64
+    ): array {
+        $publicKeyBytes = strlen(base64_decode($publicKeyB64, true) ?: '');
+        $ciphertextBytes = strlen(base64_decode($ciphertextB64, true) ?: '');
+
+        return [
+            'challenge' => $challenge,
+            'algorithm' => 'ML-KEM-768',
+            'standard' => 'NIST FIPS 203',
+            'oid' => '2.16.840.1.101.3.4.4.2',
+            'mode' => 'real_mlkem',
+            'hardware_public_key' => $deviceId,
+            'bound_public_key' => $boundDeviceId,
+            'key_match' => $keyMatch,
+            'device_signature' => $deviceProof,
+            'expected_signature' => $expectedProof,
+            'signature_valid' => $proofValid,
+            'signature_formula' => 'SHA-256(shared_secret || challenge || username || device_id)',
+            'kem_encapsulation' => [
+                'ephemeral_public_key' => 'Stored ML-KEM-768 public key DER: ' . $publicKeyBytes . ' bytes (raw key payload 1184 bytes)',
+                'ciphertext' => 'Base64 ciphertext length: ' . strlen($ciphertextB64) . ' chars; decoded: ' . $ciphertextBytes . ' bytes',
+                'shared_secret' => '32 bytes, hidden after proof verification',
+                'public_key_bytes' => $publicKeyBytes,
+                'raw_public_key_bytes' => MLKEMManager::RAW_PUBLIC_KEY_BYTES,
+                'ciphertext_bytes' => $ciphertextBytes,
+                'shared_secret_bytes' => MLKEMManager::SHARED_SECRET_BYTES,
+                'steps' => [
+                    'Server loads the user bound ML-KEM-768 public key',
+                    'OpenSSL performs real ML-KEM-768 encapsulation',
+                    'Server stores the 32-byte shared secret only in the temporary login session',
+                    'Server sends the 1088-byte ciphertext to the ESP32 via the browser serial channel',
+                ],
+            ],
+            'kem_decapsulation' => [
+                'decapsulated_secret' => 'Hidden on ESP32; never exported',
+                'secret_match' => $proofValid,
+                'proof' => $deviceProof,
+                'expected_proof' => $expectedProof,
+                'steps' => [
+                    'ESP32 decapsulates the ciphertext using its local ML-KEM-768 secret key',
+                    'ESP32 derives the same 32-byte shared secret',
+                    'ESP32 returns only a SHA-256 proof bound to the fresh challenge and device ID',
+                ],
+            ],
+            'private_key_note' => 'ML-KEM secret key is expected to remain on ESP32 and is never sent to Nextcloud.',
+        ];
+    }
+
+    private function buildLegacyAuditPayload(
+        string $challenge,
+        string $deviceKey,
+        string $deviceSignature,
+        string $boundKey,
+        string $expectedSignature,
+        bool $keyMatch,
+        bool $signatureValid
+    ): array {
+        return [
+            'challenge' => $challenge,
+            'algorithm' => 'Legacy SHA-256 device challenge-response',
+            'standard' => 'Legacy compatibility mode',
+            'oid' => 'N/A',
+            'mode' => 'legacy_challenge_response',
+            'hardware_public_key' => $deviceKey,
+            'bound_public_key' => $boundKey,
+            'key_match' => $keyMatch,
+            'device_signature' => $deviceSignature,
+            'expected_signature' => $expectedSignature,
+            'signature_valid' => $signatureValid,
+            'signature_formula' => 'SHA-256(DeviceRootKey || Challenge)',
+            'kem_encapsulation' => [
+                'ephemeral_public_key' => 'Not used in legacy mode',
+                'ciphertext' => 'Not used in legacy mode',
+                'shared_secret' => 'Not used in legacy mode',
+                'steps' => ['This account has no stored ML-KEM public key yet. Rebind with ML-KEM firmware to enable real ML-KEM.'],
+            ],
+            'kem_decapsulation' => [
+                'decapsulated_secret' => 'Not used in legacy mode',
+                'secret_match' => false,
+                'steps' => ['Legacy SHA-256 challenge-response verified the bound device ID.'],
+            ],
+            'private_key_note' => 'Legacy hardware root key remains on ESP32.',
+        ];
+    }
+}

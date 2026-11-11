@@ -1,0 +1,78 @@
+<?php
+namespace OCA\PQCLogin\Controller;
+
+use OCA\PQCLogin\Util\MLKEMManager;
+use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http\Attribute\FrontpageRoute;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\PublicPage;
+use OCP\AppFramework\Http\DataResponse;
+use OCP\IConfig;
+use OCP\IRequest;
+
+class ChallengeController extends Controller {
+
+    private IConfig $config;
+    private MLKEMManager $mlkem;
+
+    public function __construct(string $appName, IRequest $request, IConfig $config) {
+        parent::__construct($appName, $request);
+        $this->config = $config;
+        $this->mlkem = new MLKEMManager();
+    }
+
+    #[NoAdminRequired]
+    #[PublicPage]
+    #[NoCSRFRequired]
+    #[FrontpageRoute(verb: 'GET', url: '/challenge')]
+    public function getChallenge(): DataResponse {
+        $challenge = 'COMPETITION_CHALLENGE_' . bin2hex(random_bytes(16));
+        $user = strtolower(trim((string)$this->request->getParam('user', '')));
+
+        $_SESSION['pqc_challenge'] = $challenge;
+        $_SESSION['pqc_mlkem_shared_secret'] = '';
+        $_SESSION['pqc_mlkem_ciphertext_b64'] = '';
+        $_SESSION['pqc_mlkem_user'] = '';
+
+        $response = [
+            'challenge' => $challenge,
+            'mode' => 'legacy-challenge-response',
+            'pqc_mode' => 'legacy-challenge-response',
+            'pqc_algorithm' => 'SHA-256 challenge-response',
+            'status' => 'ready',
+        ];
+
+        if ($user !== '') {
+            $publicKeyB64 = $this->config->getUserValue($user, 'pqc_login', 'mlkem_public_key_b64', '');
+            $deviceId = strtolower($this->config->getUserValue($user, 'pqc_login', 'device_id', ''));
+
+            if ($publicKeyB64 !== '' && $deviceId !== '') {
+                try {
+                    $encapsulation = $this->mlkem->encapsulate($publicKeyB64);
+                    $_SESSION['pqc_mlkem_shared_secret'] = $encapsulation['shared_secret_hex'];
+                    $_SESSION['pqc_mlkem_ciphertext_b64'] = $encapsulation['ciphertext_b64'];
+                    $_SESSION['pqc_mlkem_user'] = $user;
+
+                    $response = array_merge($response, [
+                        'mode' => 'mlkem768',
+                        'pqc_mode' => 'mlkem768',
+                        'pqc_algorithm' => 'ML-KEM-768',
+                        'pqc_oid' => '2.16.840.1.101.3.4.4.2',
+                        'device_id' => $deviceId,
+                        'ciphertext_b64' => $encapsulation['ciphertext_b64'],
+                        'public_key_der_bytes' => $encapsulation['public_key_der_bytes'],
+                        'raw_public_key_bytes' => $encapsulation['raw_public_key_bytes'],
+                        'ciphertext_bytes' => $encapsulation['ciphertext_bytes'],
+                        'shared_secret_bytes' => $encapsulation['shared_secret_bytes'],
+                    ]);
+                } catch (\Throwable $e) {
+                    $response['status'] = 'mlkem_unavailable';
+                    $response['message'] = $e->getMessage();
+                }
+            }
+        }
+
+        return new DataResponse($response);
+    }
+}

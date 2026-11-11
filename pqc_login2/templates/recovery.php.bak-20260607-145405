@@ -1,0 +1,92 @@
+<?php
+/** @var array $_ */
+?>
+<div id="pqc-recovery-container" style="display:flex; justify-content:center; align-items:center; min-height:100vh; background: #f3f4f6; font-family: 'Segoe UI', sans-serif;">
+    <div style="width:100%; max-width:450px; background:white; border-radius:20px; padding:40px; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
+        
+        <!-- Step 1: Verify Share -->
+        <div id="recovery-step-1">
+            <div style="text-align:center; margin-bottom:30px;">
+                <div style="font-size:40px; margin-bottom:10px;">🔐</div>
+                <h2 style="color:#1e293b; margin:0; font-size:24px; font-weight:700;">Account Recovery</h2>
+                <p style="color:#64748b; margin-top:5px; font-size:14px;">Use your recovery keys to rebind a new ESP32 device.</p>
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:600; font-size:14px;">Username</label>
+                <input type="text" id="recovery-username" placeholder="Enter your username" style="width:100%; padding:12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; outline:none; box-sizing:border-box;">
+            </div>
+
+            <div style="margin-bottom:25px;">
+                <label style="display:block; margin-bottom:12px; color:#475569; font-weight:600; font-size:14px;">Recovery Option</label>
+                
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <div style="padding:15px; border:1.5px solid #e2e8f0; border-radius:12px;">
+                        <label style="display:block; margin-bottom:8px; font-size:13px; color:#64748b; font-weight:600;">Option A: Recovery String (Share B)</label>
+                        <input type="text" id="recovery-share-b" placeholder="e.g. rtd-673-jdj..." style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:8px; font-family:monospace;">
+                    </div>
+
+                    <div style="text-align:center; color:#94a3b8; font-size:12px; font-weight:700;">— OR —</div>
+
+                    <div style="padding:15px; border:1.5px solid #e2e8f0; border-radius:12px;">
+                        <label style="display:block; margin-bottom:8px; font-size:13px; color:#64748b; font-weight:600;">Option B: Recovery File (Share C)</label>
+                        <input type="file" id="recovery-share-c" style="font-size:12px;">
+                    </div>
+                </div>
+            </div>
+
+            <button id="verify-recovery-btn" style="width:100%; padding:14px; background:#0f172a; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">
+                Verify & Continue
+            </button>
+        </div>
+
+        <!-- Step 2: Rebind Device (Hidden) -->
+        <div id="recovery-step-2" style="display:none;">
+            <div style="text-align:center; margin-bottom:30px;">
+                <div style="font-size:40px; margin-bottom:10px;">🔌</div>
+                <h2 style="color:#1e293b; margin:0; font-size:24px; font-weight:700;">Connect New Device</h2>
+                <p style="color:#64748b; margin-top:5px; font-size:14px;">Verification successful. Please bind your new ESP32.</p>
+            </div>
+
+            <div style="margin-bottom:25px; padding:20px; background:#f8fafc; border-radius:12px; border:1px dashed #38bdf8; text-align:center;">
+                <button type="button" id="rebind-pqc-btn" style="width:100%; padding:12px; background:#38bdf8; color:white; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;">
+                    🔌 Bind New ESP32
+                </button>
+                <div id="pqc-key-display" style="display:none; margin-top:15px;">
+                    <div id="pqc-key-value" style="font-family:monospace; font-size:11px; word-break:break-all; color:#0369a1; background:white; padding:10px; border-radius:8px; border:1px solid #bae6fd; font-weight:bold;"></div>
+                </div>
+                <p id="pqc-status-msg" style="margin-top:10px; font-size:11px; color:#64748b;">Connect via USB and click Bind.</p>
+            </div>
+
+            <button id="final-rebind-btn" disabled style="width:100%; padding:14px; background:#94a3b8; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:not-allowed;">
+                Complete Rebinding
+            </button>
+        </div>
+
+        <!-- Step 3: New SSS (Hidden) -->
+        <div id="recovery-step-3" style="display:none;">
+            <div style="text-align:center; margin-bottom:25px;">
+                <div style="font-size:40px; margin-bottom:10px;">🛡️</div>
+                <h2 style="color:#1e293b; margin:0; font-size:22px; font-weight:700;">New Recovery Keys</h2>
+                <p style="color:#64748b; margin-top:5px; font-size:13px;">Old keys are now invalid. Save these new ones.</p>
+            </div>
+
+            <div style="margin-bottom:20px; padding:15px; background:#f0f9ff; border-radius:12px;">
+                <div id="new-sss-share-b" style="font-family:monospace; font-size:14px; background:white; padding:10px; border-radius:8px; border:1px solid #bae6fd; color:#0369a1; font-weight:bold; margin-bottom:8px;"></div>
+                <button id="copy-new-share-b" style="width:100%; padding:8px; background:#38bdf8; color:white; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">Copy String</button>
+            </div>
+
+            <button id="download-new-share-c" style="width:100%; padding:12px; background:#0f172a; color:white; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; margin-bottom:20px;">
+                📥 Download new recovery.pqc
+            </button>
+
+            <button onclick="window.location.assign('/index.php/login')" style="width:100%; padding:14px; background:#22c55e; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">
+                Return to Login
+            </button>
+        </div>
+
+        <div style="text-align:center; margin-top:20px;">
+            <a href="/index.php/login" style="color:#64748b; font-size:14px; text-decoration:none;">Cancel</a>
+        </div>
+    </div>
+</div>

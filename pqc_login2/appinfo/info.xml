@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>pqc_login</id>
+    <name>PQC Login</name>
+    <summary>Quantum-safe ESP32 hardware login</summary>
+    <description>Post-quantum challenge-response login with ESP32 USB key binding.</description>
+    <version>1.0.1</version>
+    <licence>agpl</licence>
+    <author mail="admin@company.com">PQC Team</author>
+    <namespace>PQCLogin</namespace>
+    <category>security</category>
+    <dependencies>
+        <php min-version="8.1"/>
+        <nextcloud min-version="28" max-version="33"/>
+    </dependencies>
+</info>

@@ -1,0 +1,308 @@
+<?php
+namespace OCA\PQCLogin\Controller;
+
+use OCA\PQCLogin\Util\MRSManager;
+use OCA\PQCLogin\Util\MLKEMManager;
+use OCP\AppFramework\Controller;
+use OCP\AppFramework\Http\Attribute\FrontpageRoute;
+use OCP\AppFramework\Http\Attribute\NoAdminRequired;
+use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
+use OCP\AppFramework\Http\Attribute\PublicPage;
+use OCP\AppFramework\Http\DataResponse;
+use OCP\AppFramework\Http\TemplateResponse;
+use OCP\IConfig;
+use OCP\IRequest;
+use OCP\ISession;
+use OCP\IUserManager;
+use OCP\IUserSession;
+use OCP\Util;
+
+class RegistrationController extends Controller {
+
+    private IUserManager $userManager;
+    private IUserSession $userSession;
+    private IConfig $config;
+    private MRSManager $mrsManager;
+    private ISession $session;
+    private MLKEMManager $mlkem;
+
+    public function __construct(
+        string $appName,
+        IRequest $request,
+        IUserManager $userManager,
+        IUserSession $userSession,
+        IConfig $config,
+        MRSManager $mrsManager,
+        ISession $session
+    ) {
+        parent::__construct($appName, $request);
+        $this->userManager = $userManager;
+        $this->userSession = $userSession;
+        $this->config = $config;
+        $this->mrsManager = $mrsManager;
+        $this->session = $session;
+        $this->mlkem = new MLKEMManager();
+    }
+
+    #[NoAdminRequired]
+    #[PublicPage]
+    #[NoCSRFRequired]
+    #[FrontpageRoute(verb: 'GET', url: '/register')]
+    public function index(): TemplateResponse {
+        Util::addScript('pqc_login', 'pqc-branding');
+
+        if ($this->request->getParam('mode') === 'recovery') {
+            Util::addScript('pqc_login', 'pqc-serial');
+            Util::addScript('pqc_login', 'pqc-recovery');
+            return new TemplateResponse('pqc_login', 'recovery', [], 'guest');
+        }
+
+        Util::addScript('pqc_login', 'pqc-serial');
+        Util::addScript('pqc_login', 'pqc-register');
+        return new TemplateResponse('pqc_login', 'register', [], 'guest');
+    }
+
+    #[NoAdminRequired]
+    #[PublicPage]
+    #[NoCSRFRequired]
+    #[FrontpageRoute(verb: 'POST', url: '/register')]
+    public function register(): DataResponse {
+        try {
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            $action = $data['action'] ?? '';
+
+            if ($action === 'check-credentials') {
+                return $this->checkCredentials($data);
+            }
+            if ($action === 'recovery-verify') {
+                return $this->recoveryVerify($data);
+            }
+            if ($action === 'recovery-rebind') {
+                return $this->recoveryRebind($data);
+            }
+            if ($action === 'recovery-freeze') {
+                return $this->recoveryFreeze();
+            }
+
+            $user = strtolower(trim($data['user'] ?? ''));
+            $password = $data['password'] ?? '';
+            $pqcKey = strtolower(trim($data['pqcKey'] ?? ''));
+            $mlkemPublicKeyB64 = trim($data['mlkemPublicKeyB64'] ?? '');
+            $displayName = trim($data['displayName'] ?? '');
+            $email = trim($data['email'] ?? '');
+
+            if ($user === '' || $password === '' || ($pqcKey === '' && $mlkemPublicKeyB64 === '')) {
+                return new DataResponse([
+                    'status' => 'error',
+                    'message' => 'Missing required fields',
+                ], 400);
+            }
+
+            $normalizedMlkemPublicKey = null;
+            if ($mlkemPublicKeyB64 !== '') {
+                $normalizedMlkemPublicKey = $this->mlkem->normalizePublicKeyB64($mlkemPublicKeyB64);
+                if ($normalizedMlkemPublicKey === null) {
+                    return new DataResponse([
+                        'status' => 'error',
+                        'message' => 'Invalid ML-KEM-768 public key format (expected 1206-byte DER public key as Base64)',
+                    ], 400);
+                }
+                $pqcKey = $this->mlkem->deviceIdFromPublicKeyB64($normalizedMlkemPublicKey) ?? '';
+            }
+
+            if (!preg_match('/^[a-f0-9]{64}$/', $pqcKey)) {
+                return new DataResponse([
+                    'status' => 'error',
+                    'message' => 'Invalid device ID format (must be 64 hex characters)',
+                ], 400);
+            }
+
+            if ($this->userManager->userExists($user)) {
+                $existingUser = $this->userManager->checkPassword($user, $password);
+                if ($existingUser === false) {
+                    return new DataResponse([
+                        'status' => 'error',
+                        'message' => 'User already exists but password is incorrect',
+                    ], 403);
+                }
+
+                $this->storeDeviceBinding($user, $pqcKey, $normalizedMlkemPublicKey);
+                $sssData = $this->mrsManager->initializeForUser($user);
+
+                return new DataResponse([
+                    'status' => 'success',
+                    'message' => 'PQC key bound to existing account',
+                    'user' => $user,
+                    'sss' => $sssData
+                ]);
+            }
+
+            $newUser = $this->userManager->createUser($user, $password);
+            if ($newUser === false) {
+                throw new \Exception('Failed to create user');
+            }
+
+            if ($displayName !== '') {
+                $newUser->setDisplayName($displayName);
+            }
+            if ($email !== '') {
+                $newUser->setEMailAddress($email);
+            }
+
+            $this->storeDeviceBinding($user, $pqcKey, $normalizedMlkemPublicKey);
+            $sssData = $this->mrsManager->initializeForUser($user);
+
+            return new DataResponse([
+                'status' => 'success',
+                'message' => 'User created and PQC key bound successfully',
+                'user' => $user,
+                'sss' => $sssData
+            ]);
+        } catch (\Exception $e) {
+            return new DataResponse([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function storeDeviceBinding(string $user, string $deviceId, ?string $mlkemPublicKeyB64): void {
+        $this->config->setUserValue($user, 'pqc_login', 'pqc_key', $deviceId);
+        $this->config->setUserValue($user, 'pqc_login', 'device_id', $deviceId);
+
+        if ($mlkemPublicKeyB64 !== null) {
+            $this->config->setUserValue($user, 'pqc_login', 'mlkem_public_key_b64', $mlkemPublicKeyB64);
+            $this->config->setUserValue($user, 'pqc_login', 'mlkem_algorithm', MLKEMManager::ALGORITHM);
+            $this->config->setUserValue($user, 'pqc_login', 'mlkem_public_key_der_bytes', (string)MLKEMManager::PUBLIC_KEY_DER_BYTES);
+            $this->config->setUserValue($user, 'pqc_login', 'mlkem_raw_public_key_bytes', (string)MLKEMManager::RAW_PUBLIC_KEY_BYTES);
+            $this->config->setUserValue($user, 'pqc_login', 'mlkem_key_updated_at', (string)time());
+        } else {
+            $this->config->deleteUserValue($user, 'pqc_login', 'mlkem_public_key_b64');
+            $this->config->deleteUserValue($user, 'pqc_login', 'mlkem_algorithm');
+            $this->config->deleteUserValue($user, 'pqc_login', 'mlkem_public_key_der_bytes');
+            $this->config->deleteUserValue($user, 'pqc_login', 'mlkem_raw_public_key_bytes');
+        }
+    }
+
+    private function checkCredentials(array $data): DataResponse {
+        $user = strtolower(trim($data['user'] ?? ''));
+        $password = $data['password'] ?? '';
+
+        if ($user === '' || $password === '') {
+            return new DataResponse([
+                'status' => 'error',
+                'message' => 'Please enter username and password',
+            ], 400);
+        }
+
+        if (!$this->userManager->userExists($user)) {
+            return new DataResponse([
+                'status' => 'error',
+                'message' => 'Invalid username or password',
+            ], 403);
+        }
+
+        if ($this->userManager->checkPassword($user, $password) === false) {
+            return new DataResponse([
+                'status' => 'error',
+                'message' => 'Invalid username or password',
+            ], 403);
+        }
+
+        return new DataResponse([
+            'status' => 'success',
+            'message' => 'Credentials verified',
+        ]);
+    }
+
+    private function recoveryVerify(array $data): DataResponse {
+        $user = strtolower(trim($data['user'] ?? ''));
+        $share = trim($data['share'] ?? '');
+
+        if (!$user || !$share) {
+            return new DataResponse(['status' => 'error', 'message' => 'User and share required'], 400);
+        }
+
+        $mrs = $this->mrsManager->verifyAndBurn($user, $share);
+        if (!$mrs) {
+            return new DataResponse(['status' => 'error', 'message' => 'Invalid recovery share or version mismatch'], 403);
+        }
+
+        $this->session->set('pqc_recovery_mrs', $mrs);
+        $this->session->set('pqc_recovery_user', $user);
+
+        return new DataResponse([
+            'status' => 'success',
+            'message' => 'Recovery secret verified. You may now rebind your device.',
+            'token' => bin2hex(random_bytes(16)),
+        ]);
+    }
+
+
+    private function recoveryFreeze(): DataResponse {
+        $user = $this->session->get('pqc_recovery_user');
+        $mrs = $this->session->get('pqc_recovery_mrs');
+
+        if (!$user || !$mrs) {
+            return new DataResponse(['status' => 'error', 'message' => 'Unauthorized recovery session'], 403);
+        }
+
+        $account = $this->userManager->get($user);
+        if ($account === null) {
+            return new DataResponse(['status' => 'error', 'message' => 'User not found'], 404);
+        }
+
+        if (method_exists($account, 'setEnabled')) {
+            $account->setEnabled(false);
+        } else {
+            return new DataResponse(['status' => 'error', 'message' => 'Account freeze is not supported on this Nextcloud version'], 500);
+        }
+
+        $this->config->setUserValue($user, 'pqc_login', 'account_frozen_at', (string)time());
+        $this->config->setUserValue($user, 'pqc_login', 'account_frozen_reason', 'recovery_freeze');
+
+        $this->session->remove('pqc_recovery_user');
+        $this->session->remove('pqc_recovery_mrs');
+
+        return new DataResponse([
+            'status' => 'success',
+            'message' => 'Account frozen successfully.',
+        ]);
+    }
+
+    private function recoveryRebind(array $data): DataResponse {
+        $pqcKey = strtolower(trim($data['pqcKey'] ?? ''));
+        $mlkemPublicKeyB64 = trim($data['mlkemPublicKeyB64'] ?? '');
+        $user = $this->session->get('pqc_recovery_user');
+        $mrs = $this->session->get('pqc_recovery_mrs');
+
+        if (!$user || !$mrs || ($pqcKey === '' && $mlkemPublicKeyB64 === '')) {
+            return new DataResponse(['status' => 'error', 'message' => 'Unauthorized or missing key'], 403);
+        }
+
+        $normalizedMlkemPublicKey = null;
+        if ($mlkemPublicKeyB64 !== '') {
+            $normalizedMlkemPublicKey = $this->mlkem->normalizePublicKeyB64($mlkemPublicKeyB64);
+            if ($normalizedMlkemPublicKey === null) {
+                return new DataResponse(['status' => 'error', 'message' => 'Invalid ML-KEM public key'], 400);
+            }
+            $pqcKey = $this->mlkem->deviceIdFromPublicKeyB64($normalizedMlkemPublicKey) ?? '';
+        }
+
+        if (!preg_match('/^[a-f0-9]{64}$/', $pqcKey)) {
+            return new DataResponse(['status' => 'error', 'message' => 'Invalid device ID'], 400);
+        }
+
+        $this->storeDeviceBinding($user, $pqcKey, $normalizedMlkemPublicKey);
+        $sssData = $this->mrsManager->initializeForUser($user);
+
+        $this->session->remove('pqc_recovery_user');
+        $this->session->remove('pqc_recovery_mrs');
+
+        return new DataResponse([
+            'status' => 'success',
+            'message' => 'Device rebound and recovery secrets rotated.',
+            'sss' => $sssData,
+        ]);
+    }
+}

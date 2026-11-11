@@ -1,0 +1,99 @@
+<?php
+/** @var array $_ */
+?>
+<div id="pqc-registration-container" style="display:flex; justify-content:center; align-items:center; min-height:100vh; background: #f3f4f6; font-family: 'Segoe UI', sans-serif;">
+    <div style="width:100%; max-width:450px; background:white; border-radius:20px; padding:40px; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
+        <div style="text-align:center; margin-bottom:30px;">
+            <div style="font-size:40px; margin-bottom:10px;">🛡️</div>
+            <h2 style="color:#1e293b; margin:0; font-size:24px; font-weight:700;">Quantum-Safe Registration</h2>
+            <p style="color:#64748b; margin-top:5px; font-size:14px;">Create an account or bind your ESP32 to an existing one</p>
+        </div>
+
+        <form id="pqc-register-form">
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:600; font-size:14px;">Username</label>
+                <input type="text" name="user" required style="width:100%; padding:12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; outline:none; box-sizing:border-box;">
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:600; font-size:14px;">Display Name</label>
+                <input type="text" name="displayName" placeholder="Your full name" style="width:100%; padding:12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; outline:none; box-sizing:border-box;">
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:600; font-size:14px;">Email</label>
+                <input type="email" name="email" placeholder="you@example.com" style="width:100%; padding:12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; outline:none; box-sizing:border-box;">
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:600; font-size:14px;">Password</label>
+                <div style="position:relative;">
+                    <input type="password" id="pqc-password" name="password" required style="width:100%; padding:12px 44px 12px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; outline:none; box-sizing:border-box;">
+                    <span id="toggle-password" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; color:#64748b; display:flex; align-items:center; justify-content:center; width:28px; height:28px;"></span>
+                </div>
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:600; font-size:14px;">Confirm Password</label>
+                <div style="position:relative;">
+                    <input type="password" id="pqc-confirm-password" name="confirm_password" required style="width:100%; padding:12px 44px 12px 12px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:15px; outline:none; box-sizing:border-box;">
+                    <span id="toggle-confirm-password" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; color:#64748b; display:flex; align-items:center; justify-content:center; width:28px; height:28px;"></span>
+                </div>
+            </div>
+
+            <div style="margin-bottom:25px; padding:20px; background:#f8fafc; border-radius:12px; border:1px dashed #38bdf8; text-align:center;">
+                <label style="display:block; margin-bottom:12px; color:#0369a1; font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">🔑 Hardware PQC Binding</label>
+
+                <button type="button" id="bind-pqc-btn" style="width:100%; padding:10px; background:#38bdf8; color:white; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
+                    🔌 Bind ESP32 Key
+                </button>
+
+                <div id="pqc-key-display" style="display:none; margin-top:15px;">
+                    <div style="font-size:11px; color:#64748b; margin-bottom:4px;">Detected PQC Key ID:</div>
+                    <div id="pqc-key-value" style="font-family:monospace; font-size:11px; word-break:break-all; color:#0369a1; background:white; padding:10px; border-radius:8px; border:1px solid #bae6fd; font-weight:bold; text-align:left;"></div>
+                </div>
+
+                <input type="hidden" name="pqcKey" id="pqc-key-input">
+                <p id="pqc-status-msg" style="margin-top:10px; font-size:11px; color:#64748b;">Connect your ESP32 via USB, then click Bind (same flow as login).</p>
+            </div>
+
+            <button type="submit" id="submit-btn" disabled style="width:100%; padding:14px; background:#94a3b8; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:not-allowed;">
+                Register & Bind
+            </button>
+
+            <div style="text-align:center; margin-top:20px;">
+                <a href="/index.php/login" style="color:#64748b; font-size:14px; text-decoration:none;">Back to Login</a>
+            </div>
+        </form>
+
+        <!-- SSS Recovery Page (Hidden by default) -->
+        <div id="sss-display-container" style="display:none;">
+            <div style="text-align:center; margin-bottom:25px;">
+                <div style="font-size:40px; margin-bottom:10px;">🛡️</div>
+                <h2 style="color:#1e293b; margin:0; font-size:22px; font-weight:700;">Security Setup: Recovery Keys</h2>
+                <p style="color:#64748b; margin-top:5px; font-size:13px;">If you lose your ESP32, you will need these to recover your account.</p>
+            </div>
+
+            <div style="margin-bottom:25px; padding:20px; background:#f0f9ff; border-radius:12px; border:1px solid #bae6fd;">
+                <label style="display:block; margin-bottom:8px; color:#0369a1; font-weight:700; font-size:12px; text-transform:uppercase;">Share B: Recovery String</label>
+                <div style="display:flex; gap:8px;">
+                    <div id="sss-share-b" style="flex:1; font-family:monospace; font-size:14px; background:white; padding:12px; border-radius:8px; border:1px solid #bae6fd; color:#0369a1; font-weight:bold; letter-spacing:1px;"></div>
+                    <button id="copy-share-b" style="padding:0 15px; background:#38bdf8; color:white; border:none; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">Copy</button>
+                </div>
+                <p style="margin-top:8px; font-size:11px; color:#64748b;">Write this down or take a photo. Do not share it.</p>
+            </div>
+
+            <div style="margin-bottom:25px; padding:20px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
+                <label style="display:block; margin-bottom:8px; color:#475569; font-weight:700; font-size:12px; text-transform:uppercase;">Share C: Recovery File</label>
+                <button id="download-share-c" style="width:100%; padding:12px; background:#0f172a; color:white; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    📥 Download recovery.pqc
+                </button>
+                <p style="margin-top:8px; font-size:11px; color:#64748b;">Store this file in a safe place (USB drive or cloud vault).</p>
+            </div>
+
+            <button id="finish-sss-btn" style="width:100%; padding:14px; background:#22c55e; color:white; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">
+                I have saved my recovery keys
+            </button>
+        </div>
+    </div>
+</div>

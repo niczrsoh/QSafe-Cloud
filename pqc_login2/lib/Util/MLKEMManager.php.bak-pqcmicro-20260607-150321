@@ -1,0 +1,119 @@
+<?php
+namespace OCA\PQCLogin\Util;
+
+class MLKEMManager {
+    public const ALGORITHM = 'ML-KEM-768';
+    public const PUBLIC_KEY_DER_BYTES = 1206; // SubjectPublicKeyInfo DER wrapper around the 1184-byte raw ML-KEM-768 public key.
+    public const RAW_PUBLIC_KEY_BYTES = 1184;
+    public const CIPHERTEXT_BYTES = 1088;
+    public const SHARED_SECRET_BYTES = 32;
+
+    public function isAvailable(): bool {
+        $output = [];
+        $code = 1;
+        @exec('openssl list -kem-algorithms 2>/dev/null', $output, $code);
+        if ($code !== 0) {
+            return false;
+        }
+        return stripos(implode("\n", $output), self::ALGORITHM) !== false
+            || stripos(implode("\n", $output), 'MLKEM768') !== false;
+    }
+
+    public function normalizePublicKeyB64(string $publicKeyB64): ?string {
+        $clean = preg_replace('/\s+/', '', $publicKeyB64);
+        if ($clean === null || $clean === '') {
+            return null;
+        }
+        $der = base64_decode($clean, true);
+        if ($der === false || strlen($der) !== self::PUBLIC_KEY_DER_BYTES) {
+            return null;
+        }
+        return base64_encode($der);
+    }
+
+    public function deviceIdFromPublicKeyB64(string $publicKeyB64): ?string {
+        $normalized = $this->normalizePublicKeyB64($publicKeyB64);
+        if ($normalized === null) {
+            return null;
+        }
+        $der = base64_decode($normalized, true);
+        if ($der === false) {
+            return null;
+        }
+        return hash('sha256', $der);
+    }
+
+    public function encapsulate(string $publicKeyB64): array {
+        $normalized = $this->normalizePublicKeyB64($publicKeyB64);
+        if ($normalized === null) {
+            throw new \RuntimeException('Invalid ML-KEM-768 public key. Expected 1206-byte DER public key encoded as Base64.');
+        }
+        if (!$this->isAvailable()) {
+            throw new \RuntimeException('OpenSSL ML-KEM-768 support is not available on this server.');
+        }
+
+        $tmpBase = tempnam(sys_get_temp_dir(), 'pqc_mlkem_');
+        if ($tmpBase === false) {
+            throw new \RuntimeException('Unable to create temporary ML-KEM files.');
+        }
+
+        $pubFile = $tmpBase . '.pub.der';
+        $ctFile = $tmpBase . '.ct.bin';
+        $ssFile = $tmpBase . '.ss.bin';
+
+        try {
+            $publicDer = base64_decode($normalized, true);
+            if ($publicDer === false) {
+                throw new \RuntimeException('Invalid ML-KEM public key encoding.');
+            }
+            file_put_contents($pubFile, $publicDer);
+
+            $cmd = sprintf(
+                'openssl pkeyutl -encap -inkey %s -pubin -keyform DER -secret %s -out %s 2>&1',
+                escapeshellarg($pubFile),
+                escapeshellarg($ssFile),
+                escapeshellarg($ctFile)
+            );
+            $output = [];
+            $code = 1;
+            exec($cmd, $output, $code);
+            if ($code !== 0) {
+                throw new \RuntimeException('ML-KEM encapsulation failed: ' . trim(implode("\n", $output)));
+            }
+
+            $ciphertext = file_get_contents($ctFile);
+            $sharedSecret = file_get_contents($ssFile);
+            if ($ciphertext === false || strlen($ciphertext) !== self::CIPHERTEXT_BYTES) {
+                throw new \RuntimeException('ML-KEM ciphertext size mismatch.');
+            }
+            if ($sharedSecret === false || strlen($sharedSecret) !== self::SHARED_SECRET_BYTES) {
+                throw new \RuntimeException('ML-KEM shared secret size mismatch.');
+            }
+
+            return [
+                'ciphertext_b64' => base64_encode($ciphertext),
+                'ciphertext_hex_preview' => substr(bin2hex($ciphertext), 0, 96),
+                'shared_secret_hex' => bin2hex($sharedSecret),
+                'shared_secret_preview' => substr(bin2hex($sharedSecret), 0, 16) . '...',
+                'public_key_b64' => $normalized,
+                'public_key_der_bytes' => self::PUBLIC_KEY_DER_BYTES,
+                'raw_public_key_bytes' => self::RAW_PUBLIC_KEY_BYTES,
+                'ciphertext_bytes' => self::CIPHERTEXT_BYTES,
+                'shared_secret_bytes' => self::SHARED_SECRET_BYTES,
+            ];
+        } finally {
+            @unlink($tmpBase);
+            @unlink($pubFile);
+            @unlink($ctFile);
+            @unlink($ssFile);
+        }
+    }
+
+    public function computeProof(string $sharedSecretHex, string $challenge, string $username, string $deviceId): string {
+        $sharedSecret = hex2bin($sharedSecretHex);
+        if ($sharedSecret === false || strlen($sharedSecret) !== self::SHARED_SECRET_BYTES) {
+            return '';
+        }
+        return hash('sha256', $sharedSecret . $challenge . strtolower($username) . strtolower($deviceId));
+    }
+}
