@@ -1,0 +1,319 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+body{font-family:var(--font-sans)}
+.root{padding:1rem 0}
+.top-bar{display:flex;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap;align-items:center}
+.filter-btn{font-size:12px;padding:4px 12px;border-radius:20px;border:0.5px solid var(--color-border-secondary);background:transparent;cursor:pointer;color:var(--color-text-secondary);font-family:var(--font-sans)}
+.filter-btn.active{background:var(--color-background-secondary);color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.stats-row{display:flex;gap:10px;margin-bottom:1.25rem}
+.stat-pill{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.5rem .9rem;font-size:12px;color:var(--color-text-secondary)}
+.stat-pill b{color:var(--color-text-primary);font-weight:500}
+.week-sep{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:1.25rem 0 .6rem;padding-bottom:.3rem;border-bottom:0.5px solid var(--color-border-tertiary)}
+.day-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);margin-bottom:.5rem;overflow:hidden;transition:border-color .15s}
+.day-card:hover{border-color:var(--color-border-secondary)}
+.day-card.done-card .day-header{opacity:.5}
+.day-header{display:flex;align-items:center;gap:10px;padding:.7rem 1rem;cursor:pointer;user-select:none}
+.day-check{width:20px;height:20px;border-radius:50%;border:0.5px solid var(--color-border-secondary);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;color:transparent;transition:all .15s;cursor:pointer}
+.day-check.ticked{background:#1D9E75;border-color:#1D9E75;color:#fff}
+.day-num-label{font-size:11px;color:var(--color-text-tertiary);min-width:38px}
+.day-title-text{font-size:13px;font-weight:500;color:var(--color-text-primary);flex:1}
+.meta-chips{display:flex;gap:6px;flex-shrink:0;align-items:center}
+.chip{font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.diff-easy{background:#EAF3DE;color:#3B6D11}
+.diff-medium{background:#FAEEDA;color:#854F0B}
+.diff-hard{background:#FCEBEB;color:#A32D2D}
+.hours-chip{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+.expand-icon{font-size:13px;color:var(--color-text-tertiary);margin-left:4px;transition:transform .2s}
+.expand-icon.open{transform:rotate(180deg)}
+.day-body{display:none;padding:.1rem 1rem 1rem 1rem;border-top:0.5px solid var(--color-border-tertiary)}
+.day-body.open{display:block}
+.section-label{font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--color-text-tertiary);margin:.75rem 0 .3rem}
+.why-box{font-size:13px;color:var(--color-text-secondary);line-height:1.6;padding:.6rem .8rem;background:var(--color-background-secondary);border-radius:var(--border-radius-md);border-left:2px solid #1D9E75}
+.task-list{list-style:none}
+.task-list li{font-size:13px;color:var(--color-text-primary);line-height:1.5;padding:.25rem 0;padding-left:1.1rem;position:relative}
+.task-list li::before{content:"›";position:absolute;left:0;color:var(--color-text-tertiary)}
+.tools-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:.3rem}
+.tool-tag{font-size:11px;padding:3px 9px;border-radius:8px;background:var(--color-background-info,#E6F1FB);color:var(--color-text-info,#185FA5);border:0.5px solid var(--color-border-tertiary)}
+.progress-wrap{background:var(--color-background-secondary);border-radius:20px;height:5px;margin-bottom:1rem}
+.progress-fill{height:5px;border-radius:20px;background:#1D9E75;transition:width .3s}
+</style>
+
+<div class="root">
+<h2 class="sr-only">Detailed 30-day PQC study plan with daily tasks, hours, difficulty and tools</h2>
+
+<div class="stats-row">
+  <div class="stat-pill"><b id="s-done">0</b> / 30 done</div>
+  <div class="stat-pill"><b id="s-hrs">0</b> hrs logged</div>
+  <div class="stat-pill"><b id="s-pct">0%</b> complete</div>
+</div>
+<div class="progress-wrap"><div class="progress-fill" id="prog" style="width:0%"></div></div>
+
+<div class="top-bar">
+  <span style="font-size:12px;color:var(--color-text-tertiary)">Filter:</span>
+  <button class="filter-btn active" data-f="all">All</button>
+  <button class="filter-btn" data-f="easy">Easy</button>
+  <button class="filter-btn" data-f="medium">Medium</button>
+  <button class="filter-btn" data-f="hard">Hard</button>
+  <button class="filter-btn" data-f="coding">Coding</button>
+  <button class="filter-btn" data-f="theory">Theory</button>
+</div>
+
+<div id="plan-root"></div>
+</div>
+
+<script>
+const days=[
+  // WEEK 1
+  {d:1,week:1,title:"The quantum threat & why PQC matters",hours:1.5,diff:"easy",type:"theory",
+   why:"Before writing a single line of code, you need to understand the 'why'. Employers, especially in banking and consulting, will ask you to explain this to non-technical stakeholders. This context drives everything.",
+   tasks:["Watch IBM's 'What is a quantum computer?' (15 min on YouTube)","Read NIST IR 8413 introduction section (free PDF, 10 pages)","Write in your own words: what is Shor's algorithm and why does it break RSA?","Sketch a simple timeline: when might a cryptographically relevant quantum computer exist?"],
+   tools:["Browser","NIST IR 8413 PDF","Notion or paper notebook"]},
+
+  {d:2,week:1,title:"Classical crypto recap — RSA, ECC, DH",hours:2,diff:"medium",type:"theory",
+   why:"PQC replaces classical algorithms. You can't explain what you're replacing without knowing it well. Interviewers at banks and MNCs will test this.",
+   tasks:["Revisit RSA: key generation, encrypt, decrypt — write pseudocode from memory","Revisit ECDH and ECDSA — understand the discrete log problem","Revisit Diffie-Hellman key exchange — draw the exchange diagram","Identify: which of these are vulnerable to Shor's algorithm and why?"],
+   tools:["Pen and paper","Christof Paar's crypto lectures (YouTube, free)","Khan Academy: cryptography section"]},
+
+  {d:3,week:1,title:"Math foundation: lattices & the SIS/LWE problems",hours:2.5,diff:"hard",type:"theory",
+   why:"Almost all NIST-approved PQC algorithms are lattice-based. If you don't understand LWE (Learning With Errors), you'll be memorising algorithms without understanding them — which breaks down in interviews.",
+   tasks:["Understand what a lattice is geometrically: a grid of vectors in n-dimensional space","Read the LWE definition: given (A, b = As + e), find s — why is this hard?","Understand the SIS problem (Short Integer Solution)","Work through the toy example in the 'PQC for Beginners' blog by Daniel J. Bernstein"],
+   tools:["Browser","'An Introduction to Mathematical Cryptography' textbook (optional)","Desmos or GeoGebra for visualising 2D lattices"]},
+
+  {d:4,week:1,title:"Math foundation: modular arithmetic & polynomials",hours:2,diff:"medium",type:"theory",
+   why:"ML-KEM and ML-DSA operate over polynomial rings, not plain integers. This day gives you the algebraic intuition to understand why those algorithms work.",
+   tasks:["Practice modular arithmetic: addition, multiplication, inverse mod prime","Understand polynomial rings: R_q = Z_q[x]/(x^n + 1)","Understand Number Theoretic Transform (NTT) — why it speeds up polynomial multiplication","Solve 5 practice problems: polynomial multiply mod (x^4+1), reduce mod q=17"],
+   tools:["Python (use numpy or just built-ins)","SageMath (free, browser version at sagecell.sagemath.org)","Pen and paper"]},
+
+  {d:5,week:1,title:"NIST PQC standardisation — the full story",hours:1.5,diff:"easy",type:"theory",
+   why:"In Malaysia and Singapore, standards compliance (NIST, ETSI, MAS, BNM RMiT) is what drives adoption. Understanding the standardisation journey tells you which algorithms are safe to deploy and which are deprecated.",
+   tasks:["Read NIST's summary of the 4 selected algorithms (ML-KEM, ML-DSA, SLH-DSA, FN-DSA)","Understand why Classic McEliece and BIKE were not chosen for round 4 standards","Read CyberSecurity Malaysia's PQC Migration Framework (cybersecurity.my — free PDF)","Note which algorithms are suitable for key encapsulation vs. digital signatures"],
+   tools:["Browser","NIST PQC project page (csrc.nist.gov/projects/post-quantum-cryptography)","CyberSecurity Malaysia website"]},
+
+  {d:6,week:1,title:"Deep dive: ML-KEM (Kyber) — theory",hours:2.5,diff:"hard",type:"theory",
+   why:"ML-KEM is the primary key encapsulation mechanism standardised by NIST. It's what replaces ECDH in TLS and VPNs. This is the most important algorithm to master first.",
+   tasks:["Read the ML-KEM FIPS 203 standard introduction (csrc.nist.gov, first 20 pages)","Understand the three functions: KeyGen, Encaps, Decaps","Trace through a toy Kyber example with small parameters (n=4, q=17)","Understand why a small error 'e' is added — the LWE hardness assumption"],
+   tools:["FIPS 203 PDF (free from NIST)","Pen and paper","SageMath for toy examples"]},
+
+  {d:7,week:1,title:"Week 1 review + self-quiz",hours:1.5,diff:"easy",type:"theory",
+   why:"Spaced repetition is the most effective way to retain technical knowledge. Use this day to find gaps before moving to implementation.",
+   tasks:["Without notes: write the definition of LWE and why it is hard","Without notes: explain why RSA breaks under Shor's algorithm","Without notes: list the 4 NIST standardised PQC algorithms and their use cases","Write 5 questions you'd ask a candidate interviewing for a PQC engineer role"],
+   tools:["Notion or paper","Anki (create flashcards for terms from week 1)"]},
+
+  // WEEK 2
+  {d:8,week:2,title:"ML-KEM hands-on: Python implementation",hours:3,diff:"hard",type:"coding",
+   why:"Theory without code is useless in the job market. Employers at Accenture and EY want to see that you've actually run these algorithms. liboqs-python is the industry-standard library.",
+   tasks:["Install liboqs-python: pip install liboqs","Run ML-KEM-768 key generation, encapsulation and decapsulation","Print and inspect the byte sizes of public key, secret key, ciphertext","Time the operations: how many ms per keygen/encaps/decaps on your machine?"],
+   tools:["Python 3.10+","liboqs-python (open-quantum-safe.github.io)","VS Code or Jupyter Notebook"]},
+
+  {d:9,week:2,title:"ML-DSA (Dilithium) — theory & internals",hours:2.5,diff:"hard",type:"theory",
+   why:"ML-DSA is the primary digital signature scheme replacing ECDSA. It is used for authenticating TLS certificates, code signing, and document signing — all critical in finance and government.",
+   tasks:["Read FIPS 204 introduction (first 15 pages)","Understand the 3 functions: KeyGen, Sign, Verify","Understand the rejection sampling trick — why does Dilithium need multiple sign attempts?","Compare ML-DSA signature size vs ECDSA — what is the trade-off?"],
+   tools:["FIPS 204 PDF (free from NIST)","Pen and paper","Notion for notes"]},
+
+  {d:10,week:2,title:"ML-DSA hands-on: Python signing",hours:2.5,diff:"medium",type:"coding",
+   why:"Being able to sign and verify a message programmatically using ML-DSA is a baseline skill for any PQC engineer role.",
+   tasks:["Using liboqs-python, generate ML-DSA-65 keypair","Sign a test message: 'Hello PQC Malaysia'","Verify the signature — confirm it passes","Tamper with the signature by changing one byte — confirm verification fails","Measure average sign and verify times"],
+   tools:["Python 3.10+","liboqs-python","VS Code","hashlib (stdlib)"]},
+
+  {d:11,week:2,title:"SLH-DSA (SPHINCS+) — hash-based signatures",hours:2,diff:"medium",type:"theory",
+   why:"SLH-DSA is a stateless hash-based signature scheme — it relies only on hash function security, with no lattice math. Some regulators prefer it because the security assumption is simpler and more conservative.",
+   tasks:["Read the SLH-DSA concept: hypertree of few-time signatures (FORS + WOTS+)","Understand why it has larger signatures than ML-DSA but simpler security assumptions","Understand stateless vs stateful signature schemes (SLH-DSA vs XMSS)","Note FIPS 205 parameter sets: SLH-DSA-SHA2-128s vs 256f — what is the s/f trade-off?"],
+   tools:["FIPS 205 PDF","Browser","Notion"]},
+
+  {d:12,week:2,title:"SLH-DSA hands-on + algorithm comparison",hours:2.5,diff:"medium",type:"coding",
+   why:"Being able to compare algorithms quantitatively (key size, signature size, speed) is exactly what a PQC consultant or engineer does when advising a bank on which algorithm to deploy.",
+   tasks:["Using liboqs-python, generate SLH-DSA-SHA2-128s keypair, sign and verify","Build a comparison table in Python: ML-KEM vs ML-DSA vs SLH-DSA — key sizes, sig sizes, speed","Save the table as a CSV — this becomes part of your portfolio","Discuss in your notes: which algorithm would you recommend for a banking app and why?"],
+   tools:["Python 3.10+","liboqs-python","pandas (pip install pandas)","CSV/Excel"]},
+
+  {d:13,week:2,title:"FN-DSA (FALCON) — NTRU lattice signatures",hours:1.5,diff:"medium",type:"theory",
+   why:"FALCON produces very compact signatures and is specified in FIPS 206. It appears in some IoT and embedded systems use cases. Understanding it rounds out your algorithm knowledge.",
+   tasks:["Understand NTRU lattices vs module lattices used by Dilithium","Read why FALCON signatures are shorter than Dilithium but harder to implement safely","Note the key risk: FALCON requires a Gaussian sampler — incorrect implementation leaks the key","Add FALCON to your comparison table from Day 12"],
+   tools:["FIPS 206 PDF","Your Day 12 Python comparison script"]},
+
+  {d:14,week:2,title:"Week 2 review + write your algorithm guide",hours:2,diff:"easy",type:"theory",
+   why:"Writing forces understanding. A clear one-page algorithm guide you can show in interviews proves depth of knowledge.",
+   tasks:["Write a 1-page comparison of all 4 NIST algorithms — when to use each","Draw a decision tree: 'Do I need KEM or signature? Which parameter set?'","Revisit any hands-on code from this week and clean it up","Push all code to a GitHub repo — start your public portfolio today"],
+   tools:["Notion or Google Docs","GitHub","VS Code"]},
+
+  // WEEK 3
+  {d:15,week:3,title:"Hybrid cryptography: classical + PQC together",hours:2,diff:"medium",type:"theory",
+   why:"During the transition period, systems will run classical and PQC algorithms together (hybrid mode). This is the current recommendation from NIST, BSI, and NCSC. Banks in MY and SG are already planning this.",
+   tasks:["Understand the hybrid KEM pattern: combine X25519 and ML-KEM-768 outputs with a KDF","Read the IETF hybrid key exchange draft (tools.ietf.org, search 'hybrid key exchange')","Understand why hybrid mode reduces risk but increases handshake size","Write pseudocode for a hybrid key exchange: X25519 || ML-KEM → HKDF → session key"],
+   tools:["Browser","IETF draft PDFs","Pen and paper"]},
+
+  {d:16,week:3,title:"PQC in TLS 1.3 — protocol integration",hours:2.5,diff:"hard",type:"applied",
+   why:"TLS is the backbone of secure internet communication. Banks, e-commerce, and government portals all use TLS. Knowing how PQC integrates into TLS 1.3 is core to a crypto engineer role.",
+   tasks:["Understand TLS 1.3 handshake: which steps use KEM vs signature","Read IETF RFC 9001 on QUIC and note where PQC slots in","Set up Open Quantum Safe's fork of OpenSSL (instructions at openquantumsafe.org)","Run a test TLS 1.3 connection using ML-KEM-768 as the key exchange group"],
+   tools:["Linux/WSL","OQS-OpenSSL","curl with OQS support","Wireshark (optional, to inspect handshake)"]},
+
+  {d:17,week:3,title:"PKI and X.509 certificates with PQC",hours:2,diff:"medium",type:"applied",
+   why:"PKI (Public Key Infrastructure) is used in banks, government IDs, and enterprise VPNs. Migrating PKI to PQC is one of the most common consulting engagements in MY/SG right now.",
+   tasks:["Understand the X.509 certificate structure: who signs what and how","Generate a self-signed X.509 certificate using ML-DSA via OQS-OpenSSL","Inspect the certificate with openssl x509 -text — note the new algorithm OIDs","Understand composite certificates: why some systems need both classical and PQC signatures"],
+   tools:["OQS-OpenSSL","Linux/WSL terminal","openssl CLI"]},
+
+  {d:18,week:3,title:"Open Quantum Safe ecosystem deep dive",hours:2,diff:"medium",type:"coding",
+   why:"OQS is the main open-source PQC library ecosystem used in production systems. Knowing it is like knowing OpenSSL — essential for any practitioner.",
+   tasks:["Explore the OQS GitHub organisation (github.com/open-quantum-safe)","Install liboqs (C library) and run its test suite","Understand the project structure: liboqs → oqs-provider → OQS-OpenSSL","Read how oqs-provider plugs PQC into standard OpenSSL applications"],
+   tools:["Linux/WSL","CMake","gcc","Python 3.10+","liboqs","Git"]},
+
+  {d:19,week:3,title:"Crypto agility: designing migration-ready systems",hours:2,diff:"medium",type:"applied",
+   why:"Crypto agility is the ability to swap cryptographic algorithms without redesigning the whole system. This concept appears in every PQC consulting engagement and is specifically mentioned in the CyberSecurity Malaysia framework.",
+   tasks:["Define crypto agility: algorithm abstraction, key management separation, protocol negotiation","Design a crypto-agile API in Python: a class that wraps any KEM and can be swapped at config time","Read how TLS uses cipher suites for agility — model your design on this","Write a short design doc: 'How I would make a banking app crypto-agile in 3 months'"],
+   tools:["Python","VS Code","Notion or Google Docs"]},
+
+  {d:20,week:3,title:"Side-channel attacks on PQC implementations",hours:2,diff:"hard",type:"theory",
+   why:"A PQC algorithm can be mathematically secure but leak the secret key through timing or power variations. This is tested in security assessments and is a key topic for any PQC engineer.",
+   tasks:["Understand timing attacks: why constant-time code matters for ML-KEM decapsulation","Read the Herrero et al. timing attack on early Kyber implementations","Understand why FALCON's Gaussian sampler is notoriously hard to implement securely","Write 3 rules for secure PQC implementation you would enforce in a code review"],
+   tools:["Browser","Academic papers via Google Scholar (search 'Kyber timing attack')","Notion"]},
+
+  {d:21,week:3,title:"Week 3 review + build a hybrid TLS demo",hours:3,diff:"hard",type:"coding",
+   why:"A working demo is worth 10 slides in an interview. A hybrid TLS demo combines everything from week 3 into a tangible portfolio artifact.",
+   tasks:["Set up a simple HTTPS server using OQS-OpenSSL with ML-KEM-768 + X25519 hybrid","Connect to it with a client and verify the handshake succeeds","Capture and inspect the ClientHello to see the hybrid key share","Write a README for the demo — push everything to GitHub"],
+   tools:["OQS-OpenSSL","Linux/WSL","Python (http.server or nginx)","Wireshark","GitHub"]},
+
+  // WEEK 4
+  {d:22,week:4,title:"Cryptographic inventory & CBOM",hours:2,diff:"medium",type:"grc",
+   why:"A Cryptographic Bill of Materials (CBOM) is the first step in any PQC migration project. Accenture's KL role specifically mentions building cryptographic asset inventories. This skill is billable on day one.",
+   tasks:["Understand what a CBOM is: list all algorithms, key sizes, libraries, and protocols in a system","Use the free tool 'cbomkit' or manually audit a sample Python app for crypto usage","Create a sample CBOM in spreadsheet format: algorithm, library, location, quantum-safe?","Read CISA's guidance on cryptographic inventory (cisa.gov, search 'post-quantum')"],
+   tools:["cbomkit (GitHub)","Excel or Google Sheets","Browser","CISA website"]},
+
+  {d:23,week:4,title:"PQC migration planning & roadmaps",hours:2,diff:"medium",type:"grc",
+   why:"Migration planning is the core deliverable in a PQC consulting engagement. You need to be able to present a phased roadmap to a CISO or CTO.",
+   tasks:["Read NIST SP 1800-38 (migration to PQC, free PDF) — note the 5-phase model","Draft a 12-month PQC migration roadmap for a fictional Malaysian bank","Include: inventory phase, risk assessment, pilot hybrid deployment, production rollout","Identify the riskiest systems first: CA servers, VPNs, HSMs, TLS termination points"],
+   tools:["NIST SP 1800-38 PDF","PowerPoint or Google Slides","Notion"]},
+
+  {d:24,week:4,title:"Malaysian & Singapore regulatory landscape",hours:1.5,diff:"easy",type:"grc",
+   why:"If you're targeting banks or telcos in MY/SG, you must understand BNM RMiT and MAS TRM. Regulators will mandate PQC migration timelines, and consultants who can map algorithms to compliance requirements are extremely valuable.",
+   tasks:["Read BNM Risk Management in Technology (RMiT) — identify crypto-related clauses","Read MAS TRM Guidelines section on cryptography","Read CyberSecurity Malaysia's PQC Migration Framework — note the recommended timelines","Write a 1-page note: 'What does a Malaysian bank need to do by 2030 for PQC compliance?'"],
+   tools:["BNM website (bnm.gov.my)","MAS website (mas.gov.sg)","CyberSecurity Malaysia (cybersecurity.my)","Notion"]},
+
+  {d:25,week:4,title:"PQC in real protocols: SSH, VPN, email",hours:2,diff:"medium",type:"applied",
+   why:"TLS is not the only protocol that needs migration. SSH, IPsec VPNs, S/MIME email, and code signing are all on the list. Understanding breadth shows an employer you can handle real-world system migrations.",
+   tasks:["Read how OpenSSH plans to integrate ML-KEM (it already has a hybrid in OpenSSH 9.0)","Understand PQC in IKEv2/IPsec: which messages use KEM vs signature","Read S/MIME v4 and how ML-DSA would sign email","List 5 enterprise systems a bank uses that will each need PQC migration"],
+   tools:["Browser","OpenSSH 9.0 release notes","IETF drafts for PQC in IPsec"]},
+
+  {d:26,week:4,title:"Mock technical interview prep",hours:2,diff:"medium",type:"career",
+   why:"You can know the material and still fail an interview if you can't articulate it clearly under pressure. Practice answering out loud, not just in your head.",
+   tasks:["Answer out loud: 'Explain ML-KEM to a senior developer who has never heard of PQC'","Answer out loud: 'What is LWE and why is it hard?'","Answer out loud: 'How would you migrate a bank's TLS infrastructure to PQC?'","Answer out loud: 'What is a CBOM and how would you create one?'","Record yourself and review — note unclear explanations"],
+   tools:["Phone camera or laptop webcam","Notion (script your answers first)","Mirror"]},
+
+  {d:27,week:4,title:"Build your portfolio project — PQC demo app",hours:4,diff:"hard",type:"coding",
+   why:"A GitHub portfolio project is the single best thing you can bring to an interview. It proves you have actually built something, not just read about it.",
+   tasks:["Build a simple Python CLI tool: takes a message, encrypts with ML-KEM + AES-256-GCM, signs with ML-DSA","Display key sizes, signature sizes, and timing for each operation","Add a README with: what the tool does, which algorithms used, how to run it","Push to GitHub with a clean commit history — this is your headline portfolio piece"],
+   tools:["Python 3.10+","liboqs-python","cryptography (pip install cryptography)","GitHub","VS Code"]},
+
+  {d:28,week:4,title:"Write your PQC knowledge summary doc",hours:2,diff:"easy",type:"career",
+   why:"Writing a clean, shareable summary doc forces you to consolidate everything you've learned. It also becomes a reference you can send to recruiters or attach to job applications.",
+   tasks:["Write a 2-page PDF or Notion doc: 'Post-Quantum Cryptography — A Practitioner's Guide'","Include: algorithm overview table, migration checklist, MY/SG regulatory notes","Include: your GitHub portfolio link and the demo app","Add a section: 'Open questions I'm still researching' — shows intellectual honesty"],
+   tools:["Notion or Google Docs","Your Day 12 comparison table","GitHub link"]},
+
+  {d:29,week:4,title:"Apply and engage — LinkedIn, communities, jobs",hours:2,diff:"easy",type:"career",
+   why:"Technical skill without visibility leads nowhere. Malaysia and Singapore's PQC community is small — being visible in it dramatically increases your chances of being found by recruiters.",
+   tasks:["Update LinkedIn headline: 'Cybersecurity | Post-Quantum Cryptography | PQC Migration'","Write a short LinkedIn post about your 30-day journey — share your GitHub project","Join CyberSecurity Malaysia's PQC Special Interest Group (bit.ly/PQC-SIG)","Apply to at least 2 roles: Accenture KL Quantum Security Lead, EY/KPMG cyber associate"],
+   tools:["LinkedIn","CyberSecurity Malaysia PQC SIG registration link","JobStreet","LinkedIn Jobs"]},
+
+  {d:30,week:4,title:"Final review + plan your next 30 days",hours:1.5,diff:"easy",type:"career",
+   why:"Mastery does not end at day 30. PQC is evolving rapidly — NIST may release additional standards, quantum hardware keeps advancing. Knowing what to study next keeps you ahead of the field.",
+   tasks:["Review your week 1 flashcards — how much do you still remember?","Identify your 2 weakest areas from the 30 days and schedule focused review","Explore next topics: homomorphic encryption, zk-SNARKs, quantum key distribution (QKD)","Set a goal: get one PQC certification or conference talk submission in the next 3 months"],
+   tools:["Anki","Notion","IACR ePrint (eprint.iacr.org) for latest research"]},
+];
+
+const weekMeta={
+  1:{label:"Week 1 — Foundations",desc:"Build the conceptual and mathematical base"},
+  2:{label:"Week 2 — Core Algorithms",desc:"Master all 4 NIST PQC algorithms"},
+  3:{label:"Week 3 — Real-World Integration",desc:"Deploy PQC in protocols and systems"},
+  4:{label:"Week 4 — Job-Ready Skills",desc:"GRC, interviews, portfolio, and applications"},
+};
+
+let done=new Set();
+let filter="all";
+
+function diffClass(d){return d==="easy"?"diff-easy":d==="medium"?"diff-medium":"diff-hard"}
+function typeMatch(day){
+  if(filter==="all")return true;
+  if(filter==="easy")return day.diff==="easy";
+  if(filter==="medium")return day.diff==="medium";
+  if(filter==="hard")return day.diff==="hard";
+  if(filter==="coding")return day.type==="coding";
+  if(filter==="theory")return day.type==="theory"||day.type==="grc"||day.type==="career"||day.type==="applied";
+  return true;
+}
+
+function render(){
+  const root=document.getElementById("plan-root");
+  root.innerHTML="";
+  let curWeek=0;
+  days.forEach(day=>{
+    if(!typeMatch(day))return;
+    if(day.week!==curWeek){
+      curWeek=day.week;
+      const wm=weekMeta[curWeek];
+      const sep=document.createElement("div");
+      sep.className="week-sep";
+      sep.textContent=wm.label+" — "+wm.desc;
+      root.appendChild(sep);
+    }
+    const card=document.createElement("div");
+    card.className="day-card"+(done.has(day.d)?" done-card":"");
+
+    card.innerHTML=`<div class="day-header" data-d="${day.d}">
+      <div class="day-check ${done.has(day.d)?"ticked":""}" data-tick="${day.d}">✓</div>
+      <span class="day-num-label">Day ${day.d}</span>
+      <span class="day-title-text">${day.title}</span>
+      <div class="meta-chips">
+        <span class="chip hours-chip">${day.hours}h</span>
+        <span class="chip ${diffClass(day.diff)}">${day.diff}</span>
+      </div>
+      <span class="expand-icon" data-ei="${day.d}">▾</span>
+    </div>
+    <div class="day-body" id="body-${day.d}">
+      <div class="section-label">Why this day matters</div>
+      <div class="why-box">${day.why}</div>
+      <div class="section-label">Today's tasks</div>
+      <ul class="task-list">${day.tasks.map(t=>`<li>${t}</li>`).join("")}</ul>
+      <div class="section-label">Tools needed</div>
+      <div class="tools-row">${day.tools.map(t=>`<span class="tool-tag">${t}</span>`).join("")}</div>
+    </div>`;
+
+    root.appendChild(card);
+
+    card.querySelector(".day-header").addEventListener("click",e=>{
+      if(e.target.dataset.tick)return;
+      const body=document.getElementById("body-"+day.d);
+      const ei=card.querySelector(".expand-icon");
+      const isOpen=body.classList.contains("open");
+      body.classList.toggle("open",!isOpen);
+      ei.classList.toggle("open",!isOpen);
+    });
+    card.querySelector(".day-check").addEventListener("click",e=>{
+      e.stopPropagation();
+      if(done.has(day.d))done.delete(day.d);else done.add(day.d);
+      updateStats();render();
+    });
+  });
+}
+
+function updateStats(){
+  const n=done.size;
+  const hrs=days.filter(d=>done.has(d.d)).reduce((a,d)=>a+d.hours,0);
+  const pct=Math.round(n/30*100);
+  document.getElementById("s-done").textContent=n;
+  document.getElementById("s-hrs").textContent=hrs.toFixed(1);
+  document.getElementById("s-pct").textContent=pct+"%";
+  document.getElementById("prog").style.width=pct+"%";
+}
+
+document.querySelectorAll(".filter-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    filter=btn.dataset.f;
+    document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    render();
+  });
+});
+
+render();
+updateStats();
+</script>
